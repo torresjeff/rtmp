@@ -1,0 +1,172 @@
+package session
+
+import (
+	"bufio"
+	"fmt"
+	"github.com/torresjeff/rtmp-server/config"
+	"github.com/torresjeff/rtmp-server/utils"
+	"net"
+)
+
+type HandshakeState uint32
+const (
+	RtmpHandshakeUninit = iota
+	RtmpHandshake0
+	RtmpHandshake1
+	RtmpHandshake2
+)
+
+const RtmpVersion3 = 0x03
+
+// Represents a connection made with the RTMP server where messages are exchanged between client/server.
+type Session struct {
+	id     uint32
+	conn   *net.Conn
+	socket *bufio.ReadWriter
+
+	//handshakeState HandshakeState
+	c1             []byte
+	c1RandomData   []byte
+	c1Time         []byte
+	s1             []byte
+	s1RandomData   []byte
+	s1Time         []byte
+}
+
+func NewSession(conn *net.Conn) *Session {
+	session := &Session{
+		id:             GenerateSessionId(),
+		conn:           conn,
+		socket:         bufio.NewReadWriter(bufio.NewReader(*conn), bufio.NewWriter(*conn)),
+		//handshakeState: RtmpHandshakeUninit,
+	}
+	RegisterSession(session.id, session)
+	return session
+}
+
+func (session *Session) Run() error {
+	err := session.Handshake()
+	if err != nil {
+		return err
+	}
+
+	if config.Debug {
+		fmt.Println("Handshake done")
+	}
+
+	// Continue with: https://github.com/c-bata/rtmp/blob/master/conn.go
+
+	return nil
+}
+
+func (session *Session) Handshake() error {
+	var err error
+	if err = session.readC0C1(); err != nil {
+		return err
+	}
+	if err = session.sendS0S1S2(); err != nil {
+		return err
+	}
+	if err = session.readC2(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (session *Session) GetID() uint32 {
+	return session.id
+}
+
+func (session *Session) send(bytes []byte) error {
+	if _, err := session.socket.Write(bytes); err != nil {
+		return err
+	}
+	if err := session.socket.Flush(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (session *Session) write(bytes []byte) error {
+	if _, err := session.socket.Write(bytes); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (session *Session) flush() error {
+	if err := session.socket.Flush(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (session *Session) read(bytes []byte) error {
+	if n, err := session.socket.Read(bytes); err != nil {
+		return err
+	} else {
+		fmt.Println("read", n, "bytes from socket")
+	}
+	return nil
+}
+
+func (session *Session) readC0C1() error {
+	var c0c1 [1537]byte
+	err := session.read(c0c1[:])
+	if err != nil {
+		return err
+	}
+	// Extract c1 message (which starts at byte 1) and store it for future use (sending it in S2)
+	session.c1 = c0c1[1:]
+	if config.Debug {
+		fmt.Println("rtmp: handshake c1 received: data", session.c1)
+	}
+	return nil
+}
+
+func (session *Session) readC2() error {
+	fmt.Println("trying to read c2")
+	var c2 [1536]byte
+	if err := session.read(c2[:]); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Sends the s0, s1, and s2 sequence
+func (session *Session) sendS0S1S2() error {
+	var s0s1s2 [1 + 2*1536]byte
+	var err error
+	// s0 message is stored in byte 0
+	s0s1s2[0] = RtmpVersion3
+	// s1 message is stored in bytes 1-1536
+	if err = session.generateS1(s0s1s2[1:1537]); err != nil {
+		return err
+	}
+	// s2 message is stored in bytes 1537-3073
+	if err = session.generateS2(s0s1s2[1537:]); err != nil {
+		return err
+	}
+
+	return session.send(s0s1s2[:])
+}
+
+// Generates an S1 message and stores it in s1
+func (session *Session) generateS1(s1 []byte) error {
+	// the s1 byte array is zero-initialized, since we didnd't modify it, we're sending our time as 0
+	err := utils.GenerateRandomDataFromBuffer(s1[8:])
+	if err != nil {
+		return err
+	}
+	session.s1 = s1[:]
+	session.s1RandomData = s1[8:]
+	return nil
+}
+
+
+// Generates an S1 message and stores it in s2. The S2 message is an echo of the C1 message
+func (session *Session) generateS2(s2 []byte) error {
+	copy(s2[:], session.c1)
+	return nil
+}
