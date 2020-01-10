@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="b14d4cdc-40f1-4a1d-a69e-3e21b3bae22a" name="Default Changelist" comment="" />
+    <list default="true" id="b14d4cdc-40f1-4a1d-a69e-3e21b3bae22a" name="Default Changelist" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rtmp/session/session.go" beforeDir="false" afterPath="$PROJECT_DIR$/rtmp/session/session.go" afterDir="false" />
+    </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -22,8 +25,8 @@
       <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/rtmp/session/session.go">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="394">
-              <caret line="41" selection-start-line="41" selection-end-line="41" />
+            <state relative-caret-position="401">
+              <caret line="150" column="59" selection-start-line="150" selection-start-column="59" selection-end-line="150" selection-end-column="59" />
             </state>
           </provider>
         </entry>
@@ -87,6 +90,7 @@
       <find>context</find>
       <find>rtmp</find>
       <find>client clo</find>
+      <find>receiv</find>
     </findStrings>
   </component>
   <component name="GOROOT" path="C:\Go" />
@@ -173,6 +177,7 @@
   </component>
   <component name="PropertiesComponent">
     <property name="DefaultGoTemplateProperty" value="Go File" />
+    <property name="SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
     <property name="WebServerToolWindowFactoryState" value="false" />
     <property name="go.gopath.indexing.explicitly.defined" value="true" />
     <property name="go.import.settings.migrated" value="true" />
@@ -324,8 +329,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/rtmp/session/session.go">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="394">
-          <caret line="41" selection-start-line="41" selection-end-line="41" />
+        <state relative-caret-position="401">
+          <caret line="150" column="59" selection-start-line="150" selection-start-column="59" selection-end-line="150" selection-end-column="59" />
         </state>
       </provider>
     </entry>

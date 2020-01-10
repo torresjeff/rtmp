@@ -103,10 +103,8 @@ func (session *Session) flush() error {
 }
 
 func (session *Session) read(bytes []byte) error {
-	if n, err := session.socket.Read(bytes); err != nil {
+	if _, err := session.socket.Read(bytes); err != nil {
 		return err
-	} else {
-		fmt.Println("read", n, "bytes from socket")
 	}
 	return nil
 }
@@ -119,14 +117,10 @@ func (session *Session) readC0C1() error {
 	}
 	// Extract c1 message (which starts at byte 1) and store it for future use (sending it in S2)
 	session.c1 = c0c1[1:]
-	if config.Debug {
-		fmt.Println("rtmp: handshake c1 received: data", session.c1)
-	}
 	return nil
 }
 
 func (session *Session) readC2() error {
-	fmt.Println("trying to read c2")
 	var c2 [1536]byte
 	if err := session.read(c2[:]); err != nil {
 		return err
@@ -154,7 +148,7 @@ func (session *Session) sendS0S1S2() error {
 
 // Generates an S1 message and stores it in s1
 func (session *Session) generateS1(s1 []byte) error {
-	// the s1 byte array is zero-initialized, since we didnd't modify it, we're sending our time as 0
+	// the s1 byte array is zero-initialized, since we didn't modify it, we're sending our time as 0
 	err := utils.GenerateRandomDataFromBuffer(s1[8:])
 	if err != nil {
 		return err
