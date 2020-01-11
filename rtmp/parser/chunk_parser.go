@@ -9,6 +9,7 @@ import (
 	"io"
 )
 
+// Chunk types
 const (
 	ChunkType0 = iota
 	ChunkType1
@@ -16,6 +17,7 @@ const (
 	ChunkType3
 )
 
+// Control message types
 const (
 	// Control messages MUST have message stream ID 0 and be sent in chunk stream ID 2
 	SetChunkSize = 1
@@ -23,6 +25,25 @@ const (
 	Ack = 3
 	WindowAckSize = 5
 	SetPeerBandwidth = 6
+
+	UserControlMessage = 4
+)
+
+// Types of messages and commands
+const (
+	CommandMessageAMF0 = 20
+	CommandMessageAMF3 = 17
+
+	DataMessageAMF0 = 18
+	DataMessageAMF3 = 15
+
+	SharedObjectMessageAMF0 = 19
+	SharedObjectMessageAMF3 = 16
+
+	AudioMessage = 8
+	VideoMessage = 9
+	AggregateMessage = 22
+
 )
 
 const DefaultMaximumChunkSize = 128
@@ -102,7 +123,12 @@ func (parser *ChunkParser) ReadChunkData(header *ChunkHeader) (*ChunkData, error
 	switch header.MessageHeader.MessageTypeID {
 	case SetChunkSize, AbortMessage, Ack, WindowAckSize, SetPeerBandwidth:
 		return parser.handleControlMessage(header)
+	case UserControlMessage:
+		return parser.handleUserControlMessage(header)
+	case CommandMessageAMF0, CommandMessageAMF3:
+		//return parser.handleCommandMessage(header.MessageHeader.MessageTypeID)
 	}
+
 	return nil, nil
 }
 
@@ -260,7 +286,6 @@ func (parser *ChunkParser) handleControlMessage(header *ChunkHeader) (*ChunkData
 			payload: chunkSize,
 		}, nil
 	case AbortMessage:
-		// TODO: ignore abortmessage for performance?
 		// The payload of an abort message is the chunk stream ID whose current message is to be discarded
 		chunkStreamId := make([]byte, messageLength)
 		_, err := io.ReadAtLeast(parser.reader, chunkStreamId, int(messageLength))
@@ -271,7 +296,6 @@ func (parser *ChunkParser) handleControlMessage(header *ChunkHeader) (*ChunkData
 			payload: chunkStreamId,
 		}, nil
 	case Ack:
-		// TODO: ignore acks for performance?
 		// The payload of an ack message is the sequence number (number of bytes received so far)
 		sequenceNumber := make([]byte, messageLength)
 		_, err := io.ReadAtLeast(parser.reader, sequenceNumber, int(messageLength))
@@ -296,7 +320,6 @@ func (parser *ChunkParser) handleControlMessage(header *ChunkHeader) (*ChunkData
 			payload: ackWindowSize,
 		}, nil
 	case SetPeerBandwidth:
-		// TODO: ignore set peer bandwidth for performance?
 		// The payload of a set peer bandwidth message is the window size and the limit type (hard, soft, dynamic)
 		ackWindowSize := make([]byte, messageLength)
 		_, err := io.ReadAtLeast(parser.reader, ackWindowSize, int(messageLength))
@@ -314,4 +337,17 @@ func (parser *ChunkParser) handleControlMessage(header *ChunkHeader) (*ChunkData
 	default:
 		return nil, errors.New("received unsupported message type ID")
 	}
+}
+
+func (parser *ChunkParser) handleUserControlMessage(header *ChunkHeader) (*ChunkData, error) {
+	messageLength := header.MessageHeader.MessageLength
+	// The first 2 bytes of the payload define the event type, the rest of the payload is the event data (the size of event data is variable)
+	payload := make([]byte, messageLength)
+	_, err := io.ReadAtLeast(parser.reader, payload, int(messageLength))
+	if err != nil {
+		return nil, err
+	}
+	return &ChunkData{
+		payload: payload,
+	}, nil
 }
