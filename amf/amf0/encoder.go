@@ -47,7 +47,7 @@ func encodeECMAArray(ecmaArray ECMAArray) []byte {
 	// The actual payload of the object is the length of the object buffer, minus the header byte (1 byte) and the endObject bytes (3 bytes).
 	objPayloadLength := len(obj) - 4
 	// An ECMA Array is an object but without any ordering of the keys. It has additional information (associative count, 4 bytes)
-	buf := make([]byte, 1 + 4 + objPayloadLength) // -1 to remove the original object header
+	buf := make([]byte, 1 + 4 + objPayloadLength)
 	buf[0] = TypeECMAArray
 	// Put the associative count (how many keys the object has)
 	binary.BigEndian.PutUint32(buf[1:5], uint32(len(ecmaArray)))

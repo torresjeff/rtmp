@@ -1,6 +1,7 @@
 package amf0
 
 type ECMAArray map[string]interface{}
+type ObjectEnd struct{}
 
 const (
 	TypeNumber = 0x00
