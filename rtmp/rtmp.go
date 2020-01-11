@@ -19,7 +19,7 @@ func (server *Server) Run() error {
 
 	tcpAddress, err := net.ResolveTCPAddr("tcp", server.Addr);
 	if err != nil {
-		err = fmt.Errorf("rtmp: ListenAndServer: %s", err)
+		err = fmt.Errorf("rtmp: Run server error: %s", err)
 		return err
 	}
 
@@ -33,7 +33,7 @@ func (server *Server) Run() error {
 		fmt.Println("rtmp: server: listening on", server.Addr)
 	}
 
-	// Loop infinitely, accepting any incoming connection
+	// Loop infinitely, accepting any incoming connection. Every new connection will create a new session.
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -51,7 +51,7 @@ func (server *Server) Run() error {
 		go func () {
 			err := sess.Run()
 			if config.Debug {
-				fmt.Println("rtmp: server: session closed err:", err)
+				fmt.Println("rtmp: server: session closed, err:", err)
 			}
 		}()
 

@@ -4,16 +4,10 @@ import (
 	"bufio"
 	"fmt"
 	"github.com/torresjeff/rtmp-server/config"
+	"github.com/torresjeff/rtmp-server/rtmp/parser"
 	"github.com/torresjeff/rtmp-server/utils"
+	"io"
 	"net"
-)
-
-type HandshakeState uint32
-const (
-	RtmpHandshakeUninit = iota
-	RtmpHandshake0
-	RtmpHandshake1
-	RtmpHandshake2
 )
 
 const RtmpVersion3 = 0x03
@@ -21,42 +15,50 @@ const RtmpVersion3 = 0x03
 // Represents a connection made with the RTMP server where messages are exchanged between client/server.
 type Session struct {
 	id     uint32
-	conn   *net.Conn
+	conn   net.Conn
 	socket *bufio.ReadWriter
 
 	//handshakeState HandshakeState
 	c1             []byte
-	c1RandomData   []byte
-	c1Time         []byte
 	s1             []byte
-	s1RandomData   []byte
-	s1Time         []byte
+
+	parser *parser.ChunkParser
 }
 
 func NewSession(conn *net.Conn) *Session {
 	session := &Session{
 		id:             GenerateSessionId(),
-		conn:           conn,
-		socket:         bufio.NewReadWriter(bufio.NewReader(*conn), bufio.NewWriter(*conn)),
+		conn:           *conn,
+		socket:         bufio.NewReadWriter(bufio.NewReaderSize(*conn, config.BuffioSize), bufio.NewWriterSize(*conn, config.BuffioSize)),
 		//handshakeState: RtmpHandshakeUninit,
 	}
+	session.parser = parser.NewChunkParser(session.socket.Reader)
 	RegisterSession(session.id, session)
 	return session
 }
 
+// Run performs the initial handshake and starts receiving streams of data.
 func (session *Session) Run() error {
+	// Perform handshake
 	err := session.Handshake()
 	if err != nil {
+		session.conn.Close()
 		return err
 	}
 
 	if config.Debug {
-		fmt.Println("Handshake done")
+		fmt.Println("Handshake completed successfully")
 	}
 
-	// Continue with: https://github.com/c-bata/rtmp/blob/master/conn.go
-
-	return nil
+	// After handshake, start reading chunks
+	for {
+		if err := session.readChunk(); err != io.EOF {
+			session.conn.Close()
+			return nil
+		} else if err != nil {
+			return err
+		}
+	}
 }
 
 func (session *Session) Handshake() error {
@@ -154,7 +156,6 @@ func (session *Session) generateS1(s1 []byte) error {
 		return err
 	}
 	session.s1 = s1[:]
-	session.s1RandomData = s1[8:]
 	return nil
 }
 
@@ -162,5 +163,26 @@ func (session *Session) generateS1(s1 []byte) error {
 // Generates an S1 message and stores it in s2. The S2 message is an echo of the C1 message
 func (session *Session) generateS2(s2 []byte) error {
 	copy(s2[:], session.c1)
+	return nil
+}
+
+func (session *Session) readChunk() error {
+	var err error
+	chunkHeader, err := session.parser.ReadChunkHeader()
+	if err != nil {
+		return err
+	}
+
+	_, err = session.parser.ReadChunkData(chunkHeader);
+	if err != nil {
+		return err
+	}
+	if config.Debug{
+		//fmt.Println("chunkBasicHeader", chunkHeader.BasicHeader)
+		//fmt.Println("chunkMessageHeader", chunkHeader.MessageHeader)
+		//fmt.Println("chunkData", chunkData)
+	}
+
+
 	return nil
 }
