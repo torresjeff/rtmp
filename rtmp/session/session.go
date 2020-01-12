@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"github.com/torresjeff/rtmp-server/config"
-	"github.com/torresjeff/rtmp-server/rtmp/parser"
 	"github.com/torresjeff/rtmp-server/utils"
 	"io"
 	"net"
@@ -22,7 +21,7 @@ type Session struct {
 	c1             []byte
 	s1             []byte
 
-	parser *parser.ChunkParser
+	parser *ChunkHandler
 }
 
 func NewSession(conn *net.Conn) *Session {
@@ -32,7 +31,7 @@ func NewSession(conn *net.Conn) *Session {
 		socket:         bufio.NewReadWriter(bufio.NewReaderSize(*conn, config.BuffioSize), bufio.NewWriterSize(*conn, config.BuffioSize)),
 		//handshakeState: RtmpHandshakeUninit,
 	}
-	session.parser = parser.NewChunkParser(session.socket.Reader)
+	session.parser = NewChunkHandler(session.socket)
 	RegisterSession(session.id, session)
 	return session
 }
@@ -52,7 +51,9 @@ func (session *Session) Run() error {
 
 	// After handshake, start reading chunks
 	for {
-		if err := session.readChunk(); err != io.EOF {
+		// This would be readMessage instead, when implementing a client.
+		// readMessage would assemble a message from multiple chunks.
+		if err := session.readChunk(); err == io.EOF {
 			session.conn.Close()
 			return nil
 		} else if err != nil {
@@ -167,21 +168,22 @@ func (session *Session) generateS2(s2 []byte) error {
 }
 
 func (session *Session) readChunk() error {
+	// TODO: every time a chunk is read, update the number of read bytes
 	var err error
 	chunkHeader, err := session.parser.ReadChunkHeader()
 	if err != nil {
 		return err
 	}
 
-	_, err = session.parser.ReadChunkData(chunkHeader);
+	_, err = session.parser.ReadChunkData(chunkHeader)
 	if err != nil {
 		return err
 	}
-	if config.Debug{
-		//fmt.Println("chunkBasicHeader", chunkHeader.BasicHeader)
-		//fmt.Println("chunkMessageHeader", chunkHeader.MessageHeader)
-		//fmt.Println("chunkData", chunkData)
-	}
+	//if config.Debug{
+	//	fmt.Println("chunkBasicHeader", chunkHeader.BasicHeader)
+	//	fmt.Println("chunkMessageHeader", chunkHeader.MessageHeader)
+	//	fmt.Println("chunkData", chunkData)
+	//}
 
 
 	return nil

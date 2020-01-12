@@ -2,106 +2,21 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="b14d4cdc-40f1-4a1d-a69e-3e21b3bae22a" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/amf/amf3/amf3.go" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/examples/amf3encode.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/amf/amf.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/rtmp/session/chunk_generator.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/amf/amf0/amf0.go" beforeDir="false" afterPath="$PROJECT_DIR$/amf/amf0/amf0.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/amf/amf3/decoder.go" beforeDir="false" afterPath="$PROJECT_DIR$/amf/amf3/decoder.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/amf/amf3/encoder.go" beforeDir="false" afterPath="$PROJECT_DIR$/amf/amf3/encoder.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/amf/amf0/decoder.go" beforeDir="false" afterPath="$PROJECT_DIR$/amf/amf0/decoder.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/amf/amf0/encoder.go" beforeDir="false" afterPath="$PROJECT_DIR$/amf/amf0/encoder.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/config.go" beforeDir="false" afterPath="$PROJECT_DIR$/config/config.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/amf0encode.go" beforeDir="false" afterPath="$PROJECT_DIR$/examples/amf0encode.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rtmp/parser/chunk_parser.go" beforeDir="false" afterPath="$PROJECT_DIR$/rtmp/session/chunk_handler.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rtmp/session/session.go" beforeDir="false" afterPath="$PROJECT_DIR$/rtmp/session/session.go" afterDir="false" />
     </list>
-    <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
-  </component>
-  <component name="FileEditorManager">
-    <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
-      <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/amf/amf0/encoder.go">
-          <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="383">
-              <caret line="30" column="8" selection-start-line="30" selection-start-column="8" selection-end-line="30" selection-end-column="71" />
-            </state>
-          </provider>
-        </entry>
-      </file>
-      <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/amf/amf3/amf3.go">
-          <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="51">
-              <caret line="3" column="29" selection-start-line="3" selection-start-column="29" selection-end-line="3" selection-end-column="29" />
-            </state>
-          </provider>
-        </entry>
-      </file>
-      <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/examples/amf3encode.go">
-          <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="434">
-              <caret line="41" column="17" selection-start-line="41" selection-start-column="17" selection-end-line="41" selection-end-column="17" />
-              <folding>
-                <element signature="e#14#101#0" expanded="true" />
-              </folding>
-            </state>
-          </provider>
-        </entry>
-      </file>
-      <file pinned="false" current-in-tab="true">
-        <entry file="file://$PROJECT_DIR$/amf/amf3/encoder.go">
-          <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="156">
-              <caret line="26" column="44" selection-start-line="26" selection-start-column="44" selection-end-line="26" selection-end-column="44" />
-              <folding>
-                <element signature="e#14#56#0" expanded="true" />
-              </folding>
-            </state>
-          </provider>
-        </entry>
-      </file>
-      <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/amf/amf3/decoder.go">
-          <provider selected="true" editor-type-id="text-editor">
-            <state>
-              <caret column="12" selection-start-column="12" selection-end-column="12" />
-            </state>
-          </provider>
-        </entry>
-      </file>
-      <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/amf/amf0/decoder.go">
-          <provider selected="true" editor-type-id="text-editor">
-            <state>
-              <caret line="18" column="8" selection-start-line="18" selection-start-column="8" selection-end-line="18" selection-end-column="8" />
-              <folding>
-                <element signature="e#14#103#0" expanded="true" />
-              </folding>
-            </state>
-          </provider>
-        </entry>
-      </file>
-      <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/examples/amf0encode.go">
-          <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="85">
-              <caret line="10" column="26" selection-start-line="10" selection-start-column="26" selection-end-line="10" selection-end-column="26" />
-            </state>
-          </provider>
-        </entry>
-      </file>
-      <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/examples/server.go">
-          <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="238">
-              <caret line="14" selection-start-line="14" selection-end-line="14" />
-              <folding>
-                <element signature="e#14#118#0" expanded="true" />
-              </folding>
-            </state>
-          </provider>
-        </entry>
-      </file>
-    </leaf>
   </component>
   <component name="FileTemplateManagerImpl">
     <option name="RECENT_TEMPLATES">
@@ -110,125 +25,16 @@
       </list>
     </option>
   </component>
-  <component name="FindInProjectRecents">
-    <findStrings>
-      <find>context</find>
-      <find>rtmp</find>
-      <find>client clo</find>
-      <find>receiv</find>
-      <find>Close</find>
-      <find>after</find>
-      <find>csid</find>
-      <find>-marker</find>
-      <find>-mark</find>
-      <find>long</find>
-      <find>encode</find>
-      <find>v.*)</find>
-      <find>key</find>
-      <find>amf</find>
-      <find>amf4</find>
-      <find>-268435456</find>
-      <find>268435455</find>
-    </findStrings>
-    <replaceStrings>
-      <replace>decode</replace>
-      <replace>amf3</replace>
-      <replace>MinInt</replace>
-      <replace>MaxInt</replace>
-    </replaceStrings>
-  </component>
   <component name="GOROOT" path="C:\Go" />
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="IdeDocumentHistory">
-    <option name="CHANGED_PATHS">
-      <list>
-        <option value="$PROJECT_DIR$/rtmp/rtmp_connection.go" />
-        <option value="$PROJECT_DIR$/rtmp/server.go" />
-        <option value="$PROJECT_DIR$/rtmp/context.go" />
-        <option value="$PROJECT_DIR$/rtmp/rtmp_session.go" />
-        <option value="$PROJECT_DIR$/rtmp/context/context.go" />
-        <option value="$PROJECT_DIR$/rtmp/session/rtmp_session.go" />
-        <option value="$PROJECT_DIR$/rtmp/session/context.go" />
-        <option value="$PROJECT_DIR$/utils/utils.go" />
-        <option value="$PROJECT_DIR$/utils/rand.go" />
-        <option value="$PROJECT_DIR$/config/config.go" />
-        <option value="$PROJECT_DIR$/README.md" />
-        <option value="$PROJECT_DIR$/rtmp/rtmp.go" />
-        <option value="$PROJECT_DIR$/rtmp/session/session.go" />
-        <option value="$PROJECT_DIR$/amf/amf3.go" />
-        <option value="$PROJECT_DIR$/amf/amf0.go" />
-        <option value="$PROJECT_DIR$/rtmp/parser/chunk_parser.go" />
-        <option value="$PROJECT_DIR$/amf/amf0/encoder.go" />
-        <option value="$PROJECT_DIR$/amf/amf0/decoder.go" />
-        <option value="$PROJECT_DIR$/examples/amf0encode.go" />
-        <option value="$PROJECT_DIR$/examples/server.go" />
-        <option value="$PROJECT_DIR$/amf/amf0/amf0.go" />
-        <option value="$PROJECT_DIR$/amf/amf3/decoder.go" />
-        <option value="$PROJECT_DIR$/amf/amf3/amf3.go" />
-        <option value="$PROJECT_DIR$/examples/amf3encode.go" />
-        <option value="$PROJECT_DIR$/amf/amf3/encoder.go" />
-      </list>
-    </option>
-  </component>
-  <component name="ProjectFrameBounds" extendedState="6">
-    <option name="x" value="-8" />
-    <option name="y" value="5" />
-    <option name="width" value="1400" />
-    <option name="height" value="1000" />
-  </component>
+  <component name="ProjectId" id="1WJ38mTKdGRbqAW4hT8kwRNJbxw" />
   <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
-  <component name="ProjectView">
-    <navigator proportions="" version="1">
-      <foldersAlwaysOnTop value="true" />
-    </navigator>
-    <panes>
-      <pane id="ProjectPane">
-        <subPane>
-          <expand>
-            <path>
-              <item name="rtmp-server" type="b2602c69:ProjectViewProjectNode" />
-              <item name="rtmp-server" type="462c0819:PsiDirectoryNode" />
-            </path>
-            <path>
-              <item name="rtmp-server" type="b2602c69:ProjectViewProjectNode" />
-              <item name="rtmp-server" type="462c0819:PsiDirectoryNode" />
-              <item name="amf" type="462c0819:PsiDirectoryNode" />
-            </path>
-            <path>
-              <item name="rtmp-server" type="b2602c69:ProjectViewProjectNode" />
-              <item name="rtmp-server" type="462c0819:PsiDirectoryNode" />
-              <item name="amf" type="462c0819:PsiDirectoryNode" />
-              <item name="amf0" type="462c0819:PsiDirectoryNode" />
-            </path>
-            <path>
-              <item name="rtmp-server" type="b2602c69:ProjectViewProjectNode" />
-              <item name="rtmp-server" type="462c0819:PsiDirectoryNode" />
-              <item name="amf" type="462c0819:PsiDirectoryNode" />
-              <item name="amf3" type="462c0819:PsiDirectoryNode" />
-            </path>
-            <path>
-              <item name="rtmp-server" type="b2602c69:ProjectViewProjectNode" />
-              <item name="rtmp-server" type="462c0819:PsiDirectoryNode" />
-              <item name="config" type="462c0819:PsiDirectoryNode" />
-            </path>
-            <path>
-              <item name="rtmp-server" type="b2602c69:ProjectViewProjectNode" />
-              <item name="rtmp-server" type="462c0819:PsiDirectoryNode" />
-              <item name="examples" type="462c0819:PsiDirectoryNode" />
-            </path>
-            <path>
-              <item name="rtmp-server" type="b2602c69:ProjectViewProjectNode" />
-              <item name="rtmp-server" type="462c0819:PsiDirectoryNode" />
-              <item name="utils" type="462c0819:PsiDirectoryNode" />
-            </path>
-          </expand>
-          <select />
-        </subPane>
-      </pane>
-      <pane id="Scope" />
-    </panes>
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showExcludedFiles" value="true" />
+    <option name="showLibraryContents" value="true" />
   </component>
   <component name="PropertiesComponent">
     <property name="DefaultGoTemplateProperty" value="Go File" />
@@ -245,25 +51,13 @@
   </component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\torre\go\src\github.com\torresjeff\rtmp-server\rtmp\session" />
       <recent name="C:\Users\torre\go\src\github.com\torresjeff\rtmp-server\amf\amf3" />
       <recent name="C:\Users\torre\go\src\github.com\torresjeff\rtmp-server\amf\amf0" />
-      <recent name="C:\Users\torre\go\src\github.com\torresjeff\rtmp-server\rtmp\session" />
       <recent name="C:\Users\torre\go\src\github.com\torresjeff\rtmp-server\rtmp\context" />
     </key>
   </component>
-  <component name="RunDashboard">
-    <option name="ruleStates">
-      <list>
-        <RuleState>
-          <option name="name" value="ConfigurationTypeDashboardGroupingRule" />
-        </RuleState>
-        <RuleState>
-          <option name="name" value="StatusDashboardGroupingRule" />
-        </RuleState>
-      </list>
-    </option>
-  </component>
-  <component name="RunManager" selected="Go Build.go build amf0encode.go">
+  <component name="RunManager" selected="Go Build.go build server.go">
     <configuration name="go build amf0encode.go" type="GoApplicationRunConfiguration" factoryName="Go Application" temporary="true" nameIsGenerated="true">
       <module name="rtmp-server" />
       <working_directory value="$PROJECT_DIR$/" />
@@ -284,242 +78,85 @@
     </configuration>
     <recent_temporary>
       <list>
-        <item itemvalue="Go Build.go build amf0encode.go" />
         <item itemvalue="Go Build.go build server.go" />
+        <item itemvalue="Go Build.go build amf0encode.go" />
       </list>
     </recent_temporary>
   </component>
-  <component name="ToolWindowManager">
-    <frame x="-8" y="-8" width="1936" height="1056" extended-state="6" />
-    <editor active="true" />
-    <layout>
-      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.25799572" />
-      <window_info id="Structure" order="1" side_tool="true" weight="0.25" />
-      <window_info id="Favorites" order="2" side_tool="true" />
-      <window_info anchor="bottom" id="Message" order="0" />
-      <window_info anchor="bottom" id="Find" order="1" weight="0.32936078" />
-      <window_info anchor="bottom" id="Run" order="2" />
-      <window_info anchor="bottom" id="Debug" order="3" weight="0.3997833" />
-      <window_info anchor="bottom" id="Cvs" order="4" weight="0.25" />
-      <window_info anchor="bottom" id="Inspection" order="5" weight="0.4" />
-      <window_info anchor="bottom" id="TODO" order="6" />
-      <window_info anchor="bottom" id="Docker" order="7" show_stripe_button="false" />
-      <window_info anchor="bottom" id="Database Changes" order="8" />
-      <window_info anchor="bottom" id="Version Control" order="9" />
-      <window_info anchor="bottom" id="Terminal" order="10" visible="true" weight="0.33044422" />
-      <window_info anchor="bottom" id="Event Log" order="11" side_tool="true" />
-      <window_info anchor="right" id="Commander" internal_type="SLIDING" order="0" type="SLIDING" weight="0.4" />
-      <window_info anchor="right" id="Ant Build" order="1" weight="0.25" />
-      <window_info anchor="right" content_ui="combo" id="Hierarchy" order="2" weight="0.25" />
-      <window_info anchor="right" id="Database" order="3" />
-    </layout>
+  <component name="ServiceViewManager">
+    <option name="viewStates">
+      <list>
+        <serviceView>
+          <treeState>
+            <expand />
+            <select />
+          </treeState>
+        </serviceView>
+      </list>
+    </option>
+  </component>
+  <component name="StructureViewFactory">
+    <option name="ACTIVE_ACTIONS" value=",ALPHA_COMPARATOR" />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="1" />
   </component>
-  <component name="editorHistoryManager">
-    <entry file="file://C:/Go/src/fmt/errors.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="198">
-          <caret line="16" column="5" selection-start-line="16" selection-start-column="5" selection-end-line="16" selection-end-column="5" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://C:/Go/src/net/dial.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="402">
-          <caret line="701" column="5" selection-start-line="701" selection-start-column="5" selection-end-line="701" selection-end-column="5" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://C:/Go/src/fmt/print.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="198">
-          <caret line="261" column="5" selection-start-line="261" selection-start-column="5" selection-end-line="261" selection-end-column="5" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/rtmp/session/context.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="51">
-          <caret line="6" selection-start-line="6" selection-end-line="6" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/utils/rand.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="221">
-          <caret line="13" column="5" selection-start-line="13" selection-start-column="5" selection-end-line="13" selection-end-column="33" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://C:/Go/src/bufio/bufio.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="190">
-          <caret line="30" column="5" selection-start-line="30" selection-start-column="5" selection-end-line="30" selection-end-column="5" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/README.md">
-      <provider selected="true" editor-type-id="split-provider[text-editor;markdown-preview-editor]">
-        <state split_layout="SPLIT">
-          <first_editor relative-caret-position="51">
-            <caret line="3" column="34" lean-forward="true" selection-start-line="3" selection-start-column="34" selection-end-line="3" selection-end-column="34" />
-          </first_editor>
-          <second_editor />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://C:/Go/src/net/net.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="-4502">
-          <caret line="104" column="7" selection-start-line="104" selection-start-column="7" selection-end-line="104" selection-end-column="7" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://C:/Go/src/net/tcpsock.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="-1748">
-          <caret line="84" column="5" selection-start-line="84" selection-start-column="5" selection-end-line="84" selection-end-column="5" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/.gitignore">
-      <provider selected="true" editor-type-id="text-editor" />
-    </entry>
-    <entry file="file://$PROJECT_DIR$/LICENSE">
-      <provider selected="true" editor-type-id="text-editor" />
-    </entry>
-    <entry file="file://C:/Go/src/bytes/buffer.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="197">
-          <caret line="53" column="17" selection-start-line="53" selection-start-column="17" selection-end-line="53" selection-end-column="17" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/rtmp/rtmp.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="782">
-          <caret line="51" column="25" selection-start-line="51" selection-start-column="25" selection-end-line="51" selection-end-column="25" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/rtmp/session/session.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="2839">
-          <caret line="175" column="32" selection-start-line="175" selection-start-column="32" selection-end-line="175" selection-end-column="32" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/config/config.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="51">
-          <caret line="3" column="16" selection-start-line="3" selection-start-column="16" selection-end-line="3" selection-end-column="16" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://C:/Go/src/math/unsafe.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="349">
-          <caret line="22" column="5" selection-start-line="22" selection-start-column="5" selection-end-line="22" selection-end-column="5" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/rtmp/parser/chunk_parser.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="559">
-          <caret line="130" selection-start-line="130" selection-end-line="130" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://C:/Go/src/time/time.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="197">
-          <caret line="126" column="5" selection-start-line="126" selection-start-column="5" selection-end-line="126" selection-end-column="5" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/examples/server.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="238">
-          <caret line="14" selection-start-line="14" selection-end-line="14" />
-          <folding>
-            <element signature="e#14#118#0" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/amf/amf0/amf0.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="102">
-          <caret line="6" column="20" selection-start-line="6" selection-start-column="20" selection-end-line="6" selection-end-column="20" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/examples/amf0encode.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="85">
-          <caret line="10" column="26" selection-start-line="10" selection-start-column="26" selection-end-line="10" selection-end-column="26" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/amf/amf0/decoder.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state>
-          <caret line="18" column="8" selection-start-line="18" selection-start-column="8" selection-end-line="18" selection-end-column="8" />
-          <folding>
-            <element signature="e#14#103#0" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://C:/Go/src/encoding/binary/binary.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="197">
-          <caret line="128" column="17" selection-start-line="128" selection-start-column="17" selection-end-line="128" selection-end-column="17" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/amf/amf3/decoder.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state>
-          <caret column="12" selection-start-column="12" selection-end-column="12" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/amf/amf3/amf3.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="51">
-          <caret line="3" column="29" selection-start-line="3" selection-start-column="29" selection-end-line="3" selection-end-column="29" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/examples/amf3encode.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="434">
-          <caret line="41" column="17" selection-start-line="41" selection-start-column="17" selection-end-line="41" selection-end-column="17" />
-          <folding>
-            <element signature="e#14#101#0" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/amf/amf0/encoder.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="383">
-          <caret line="30" column="8" selection-start-line="30" selection-start-column="8" selection-end-line="30" selection-end-column="71" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/amf/amf3/encoder.go">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="156">
-          <caret line="26" column="44" selection-start-line="26" selection-start-column="44" selection-end-line="26" selection-end-column="44" />
-          <folding>
-            <element signature="e#14#56#0" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
+  <component name="WindowStateProjectService">
+    <state x="585" y="115" key="CommitChangelistDialog2" timestamp="1578862838768">
+      <screen x="0" y="0" width="1920" height="1040" />
+    </state>
+    <state x="585" y="115" key="CommitChangelistDialog2/0.0.1920.1040@0.0.1920.1040" timestamp="1578862838768" />
+    <state x="714" y="204" key="ExperimentsDialog" timestamp="1578853962818">
+      <screen x="0" y="0" width="1920" height="1040" />
+    </state>
+    <state x="714" y="204" key="ExperimentsDialog/0.0.1920.1040@0.0.1920.1040" timestamp="1578853962818" />
+    <state width="1877" height="347" key="GridCell.Tab.0.bottom" timestamp="1578855574167">
+      <screen x="0" y="0" width="1920" height="1040" />
+    </state>
+    <state width="1877" height="347" key="GridCell.Tab.0.bottom/0.0.1920.1040@0.0.1920.1040" timestamp="1578855574167" />
+    <state width="1877" height="347" key="GridCell.Tab.0.center" timestamp="1578855574167">
+      <screen x="0" y="0" width="1920" height="1040" />
+    </state>
+    <state width="1877" height="347" key="GridCell.Tab.0.center/0.0.1920.1040@0.0.1920.1040" timestamp="1578855574167" />
+    <state width="1877" height="347" key="GridCell.Tab.0.left" timestamp="1578855574167">
+      <screen x="0" y="0" width="1920" height="1040" />
+    </state>
+    <state width="1877" height="347" key="GridCell.Tab.0.left/0.0.1920.1040@0.0.1920.1040" timestamp="1578855574167" />
+    <state width="1877" height="347" key="GridCell.Tab.0.right" timestamp="1578855574167">
+      <screen x="0" y="0" width="1920" height="1040" />
+    </state>
+    <state width="1877" height="347" key="GridCell.Tab.0.right/0.0.1920.1040@0.0.1920.1040" timestamp="1578855574167" />
+    <state width="1877" height="347" key="GridCell.Tab.1.bottom" timestamp="1578855574168">
+      <screen x="0" y="0" width="1920" height="1040" />
+    </state>
+    <state width="1877" height="347" key="GridCell.Tab.1.bottom/0.0.1920.1040@0.0.1920.1040" timestamp="1578855574168" />
+    <state width="1877" height="347" key="GridCell.Tab.1.center" timestamp="1578855574168">
+      <screen x="0" y="0" width="1920" height="1040" />
+    </state>
+    <state width="1877" height="347" key="GridCell.Tab.1.center/0.0.1920.1040@0.0.1920.1040" timestamp="1578855574168" />
+    <state width="1877" height="347" key="GridCell.Tab.1.left" timestamp="1578855574168">
+      <screen x="0" y="0" width="1920" height="1040" />
+    </state>
+    <state width="1877" height="347" key="GridCell.Tab.1.left/0.0.1920.1040@0.0.1920.1040" timestamp="1578855574168" />
+    <state width="1877" height="347" key="GridCell.Tab.1.right" timestamp="1578855574168">
+      <screen x="0" y="0" width="1920" height="1040" />
+    </state>
+    <state width="1877" height="347" key="GridCell.Tab.1.right/0.0.1920.1040@0.0.1920.1040" timestamp="1578855574168" />
+    <state x="587" y="186" key="Registry" timestamp="1578854072989">
+      <screen x="0" y="0" width="1920" height="1040" />
+    </state>
+    <state x="587" y="186" key="Registry/0.0.1920.1040@0.0.1920.1040" timestamp="1578854072989" />
+    <state x="801" y="423" key="UiDebugger" timestamp="1578854000781">
+      <screen x="0" y="0" width="1920" height="1040" />
+    </state>
+    <state x="801" y="423" key="UiDebugger/0.0.1920.1040@0.0.1920.1040" timestamp="1578854000781" />
+    <state width="968" height="528" key="XDebugger.FullValuePopup" timestamp="1578853986832">
+      <screen x="0" y="0" width="1920" height="1040" />
+    </state>
+    <state width="968" height="528" key="XDebugger.FullValuePopup/0.0.1920.1040@0.0.1920.1040" timestamp="1578853986832" />
+    <state x="623" y="225" width="672" height="678" key="search.everywhere.popup" timestamp="1578869253186">
+      <screen x="0" y="0" width="1920" height="1040" />
+    </state>
+    <state x="623" y="225" width="672" height="678" key="search.everywhere.popup/0.0.1920.1040@0.0.1920.1040" timestamp="1578869253186" />
   </component>
 </project>
