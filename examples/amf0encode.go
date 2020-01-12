@@ -30,7 +30,7 @@ func main() {
 		"objjj": map[string]interface{}{
 				"ffff": 2321.543,
 				"aaa": true,
-				"obj2": amf0.ECMAArray{
+				"obj2": map[string]interface{}{
 					"time": time.Now(),
 				},
 		},

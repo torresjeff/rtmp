@@ -10,7 +10,10 @@ import (
 	"time"
 )
 
-// Decode returns the original form of the encoded value.
+
+// TODO: should I make a DecodeNumber, DecodeBool, etc. to avoid returning an empty interface and have the benefits of strong typing (no need to cast or type assertions)
+
+// Decode returns the original form of the encoded value, and an error if any occurred.
 // Possible return types: float64, bool, string, map[string]interface{}, nil, amf0.ECMAArray, time.Time
 // If the contents of b represent a Number (either int or float), it will be returned as a float64
 func Decode(bytes []byte) (interface{}, error) {
@@ -46,25 +49,27 @@ func decodeECMAArray(bytes []byte) ECMAArray {
 	ret := make(ECMAArray)
 	// Number of properties the object has
 	associativeCount := binary.BigEndian.Uint32(bytes[:4])
+	// Set the bytes slice to the first key
 	bytes = bytes[4:]
 	for i := uint32(0); i < associativeCount; i++ {
-		// Decode the key
-		key, _ := Decode(bytes)
+		// Decode the key. Keys are always strings
+		keyLength := binary.BigEndian.Uint16(bytes) // First 2 bytes contain string length
+		key := decodeString(bytes[2:], uint32(keyLength))
 		// Update slice to start at next value
-		bytes = bytes[size(key):]
+		bytes = bytes[Size(key)-1:] // -1 because keys don't have the string header
 
 		val, _ := Decode(bytes)
-		ret[key.(string)] = val
+		ret[key] = val
 		// Update slice to start at next key
-		bytes = bytes[size(val):]
+		bytes = bytes[Size(val):]
 	}
 	return ret
 }
 
-// size returns the number of bytes the value v has in its AMF0 representation.
-// Eg: a value v of "test" will return 7 (3 bytes for the header, 4 bytes for the string size)
+// Size returns the number of bytes the value v has in its AMF0 representation.
+// Eg: a value v of "test" will return 7 (3 bytes for the header, 4 bytes for the string Size)
 // Eg: a value v of 5 will return 9 (1 byte for the header, 8 bytes for the number)
-func size(v interface{}) uint64 {
+func Size(v interface{}) uint64 {
 	switch v.(type) {
 	case float64:
 		// A float64 spans 9 bytes (1 header byte + 8 data bytes)
@@ -73,32 +78,32 @@ func size(v interface{}) uint64 {
 		// A bool spans 2 bytes (1 header byte + 1 data byte)
 		return 2
 	case string:
-		// A string's size is variable. Depends if it is a Long String (strings with length >= 65535) or a normal String (length < 65535) + its data.
+		// A string's Size is variable. Depends if it is a Long String (strings with length >= 65535) or a normal String (length < 65535) + its data.
 		// First check for normal string
 		length := uint64(len(v.(string)))
 		if length < 65535 {
-			// If it is a normal string, its size is 3 + n (3 header bytes + string size)
+			// If it is a normal string, its Size is 3 + n (3 header bytes + string Size)
 			return 3 + length
 		} else {
-			// If it is a long string, its size is 5 + n (5 header bytes + string size)
+			// If it is a long string, its Size is 5 + n (5 header bytes + string Size)
 			return 5 + length
 		}
 	case map[string]interface{}:
-		// Calculate object size recursively
+		// Calculate object Size recursively
 		var objSize uint64
 		for k, val := range v.(map[string]interface{}) {
-			objSize += size(k)
-			objSize += size(val)
+			objSize += Size(k) - 1 // objects don't store the TypeString (0x02) header in the key
+			objSize += Size(val)
 		}
 		return objSize + 4 // Objects have a header of 1 byte and trailing marker of 3 bytes (0x00 0x00 0x09)
 	case nil:
-		// nil/null has a size of 1
+		// nil/null has a Size of 1
 		return 1
 	case ECMAArray:
 		var objSize uint64
 		for k, val := range v.(ECMAArray) {
-			objSize += size(k)
-			objSize += size(val)
+			objSize += Size(k)
+			objSize += Size(val)
 		}
 		return objSize + 5 // Objects have a header of 5 bytes (1 byte to indicate ECMArray type, followed by 4 bytes for the associative count)
 	case time.Time:
@@ -109,26 +114,33 @@ func size(v interface{}) uint64 {
 	}
 }
 
+func isEndOfObject(bytes []byte) bool {
+	return len(bytes) >= 3 && bytes[0] == 0x00 && bytes[1] == 0x00 && bytes[2] == TypeObjectEnd
+}
+
 func decodeObject(bytes []byte) map[string]interface{} {
 	m := make(map[string]interface{})
 
 	// Decode until an end of object is reached
 	for {
-		// Decode key
-		key, _ := Decode(bytes)
-		// Break out of the loop when we reach the end of an object
-		if _, isEndOfObject := key.(ObjectEnd); isEndOfObject {
-			break
+		// Decode key. Key is always a string, unless it is the end of an object
+		if isEndOfObject(bytes) {
+			return m
 		}
-		// Update slice to start at next value
-		bytes = bytes[size(key):]
+		keyLength := binary.BigEndian.Uint16(bytes)
+		key := decodeString(bytes[2:], uint32(keyLength))
+		// Break out of the loop when we reach the end of an object
+		//if _, isEndOfObject := key.(ObjectEnd); isEndOfObject {
+		//	break
+		//}
+		// Update slice to start at next value (skip the first 2 bytes that indicate the string length + the string itself)
+		bytes = bytes[2 + keyLength:]
 		// Decode value
 		val, _ := Decode(bytes)
-		m[key.(string)] = val
+		m[key] = val
 		// Update our slice to start at the next key
-		bytes = bytes[size(val):]
+		bytes = bytes[Size(val):]
 	}
-	return m
 }
 
 func decodeDate(bytes []byte) time.Time {

@@ -46,7 +46,7 @@ func encodeECMAArray(ecmaArray ECMAArray) []byte {
 	obj := encodeObject(ecmaArray)
 	// The actual payload of the object is the length of the object buffer, minus the header byte (1 byte) and the endObject bytes (3 bytes).
 	objPayloadLength := len(obj) - 4
-	// An ECMA Array is an object but without any ordering of the keys. It has additional information (associative count, 4 bytes)
+	// An ECMA Array is an object that has additional information (associative count - 4 bytes, this is the number of keys)
 	buf := make([]byte, 1 + 4 + objPayloadLength)
 	buf[0] = TypeECMAArray
 	// Put the associative count (how many keys the object has)
@@ -67,7 +67,8 @@ func encodeObject(m map[string]interface{}) []byte {
 	for key := range m {
 		// Encode property name
 		prop, _ := Encode(key)
-		buf.Write(prop)
+		// keys should not encode the type (ie. the TypeString header), it is assumed that keys are always normal strings (len(string) < 65535)
+		buf.Write(prop[1:])
 		// Encode property value
 		val, _ := Encode(m[key])
 		buf.Write(val)
