@@ -4,7 +4,7 @@ type ECMAArray map[string]interface{}
 type ObjectEnd struct{}
 
 const (
-	TypeNumber = 0x00
+	TypeNumber byte = 0x00
 	TypeBoolean = 0x01
 	TypeString = 0x02
 	TypeObject = 0x03
