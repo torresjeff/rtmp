@@ -388,13 +388,13 @@ func (chunkHandler *ChunkHandler) updateBytesReceived(i uint32) {
 	// TODO: implement send ack
 	if chunkHandler.bytesReceived >= chunkHandler.windowAckSize {
 		chunkHandler.sendAck()
+		// Reset the number of bytes received
+		chunkHandler.bytesReceived = 0
 	}
 }
 
 func (chunkHandler *ChunkHandler) sendAck() {
 	// TODO: implement send the acknowledgemnent
-	// Reset the number of bytes received
-	chunkHandler.bytesReceived = 0
 }
 
 func (chunkHandler *ChunkHandler) handleCommandMessage(commandType uint8, messageLength uint32) (*ChunkData, error) {
@@ -441,7 +441,11 @@ func (chunkHandler *ChunkHandler) handleCommandAmf0(commandName string, payload 
 
 		// Playback clients send other properties in the command object, such as what audio/video codecs the client supports
 		chunkHandler.app = commandObjectMap["app"].(string)
-		chunkHandler.flashVer = commandObjectMap["flashVer"].(string)
+		if _, exists := commandObjectMap["flashVer"]; exists {
+			chunkHandler.flashVer = commandObjectMap["flashVer"].(string)
+		} else if _, exists := commandObjectMap["flashver"]; exists {
+			chunkHandler.flashVer = commandObjectMap["flashver"].(string)
+		}
 		chunkHandler.swfUrl = commandObjectMap["swfUrl"].(string)
 		chunkHandler.tcUrl = commandObjectMap["tcUrl"].(string)
 		chunkHandler.typeOfStream = commandObjectMap["type"].(string)
