@@ -26,6 +26,7 @@ func generateWindowAckSizeMessage(size uint32) []byte {
 
 	// The next 4 bytes indicate the Message Stream ID. Protocol Control Messages, such as Window Acknowledgement Size, always use the message stream ID 0. So leave them at 0
 	// (they're already zero initialized)
+	// NetConnection is the default communication channel, which has a stream ID 0. Protocol and a few command messages, including createStream, use the default communication channel.
 	//windowAckSizeMessage[8] = 0
 	//windowAckSizeMessage[9] = 0
 	//windowAckSizeMessage[10] = 0
@@ -58,6 +59,7 @@ func generateSetPeerBandwidthMessage(size uint32, limitType uint8) []byte {
 
 	// The next 4 bytes indicate the Message Stream ID. Protocol Control Messages, such as Window Acknowledgement Size, always use the message stream ID 0. So leave them at 0
 	// (they're already zero initialized)
+	// NetConnection is the default communication channel, which has a stream ID 0. Protocol and a few command messages, including createStream, use the default communication channel.
 	//setPeerBandwidthMessage[8] = 0
 	//setPeerBandwidthMessage[9] = 0
 	//setPeerBandwidthMessage[10] = 0
@@ -96,6 +98,7 @@ func generateStreamBeginMessage(streamId uint32) []byte {
 
 	// The next 4 bytes indicate the Message Stream ID. Protocol Control Messages, such as Window Acknowledgement Size, always use the message stream ID 0. So leave them at 0.
 	// (they're already zero initialized)
+	// NetConnection is the default communication channel, which has a stream ID 0. Protocol and a few command messages, including createStream, use the default communication channel.
 	//streamBeginMessage[8] = 0
 	//streamBeginMessage[9] = 0
 	//streamBeginMessage[10] = 0
@@ -131,6 +134,7 @@ func generateSetChunkSizeMessage(chunkSize uint32) []byte {
 
 	// The next 4 bytes indicate the Message Stream ID. Protocol Control Messages, such as Window Acknowledgement Size, always use the message stream ID 0. So leave them at 0
 	// (they're already zero initialized)
+	// NetConnection is the default communication channel, which has a stream ID 0. Protocol and a few command messages, including createStream, use the default communication channel.
 	//setChunkSizeMessage[8] = 0
 	//setChunkSizeMessage[9] = 0
 	//setChunkSizeMessage[10] = 0
@@ -172,6 +176,7 @@ func generateConnectResponseSuccess(csID uint32) []byte {
 	//---- HEADER ----//
 	// fmt = 0 and csid = 3 encoded in 1 byte
 	// TODO: why does Twitch send csId = 3? is it because it is replying to the connect() request which sent csID = 3?
+	// TODO: handle potential cases where csID is more than 1 byte
 	connectResponseSuccessMessage[0] = byte(csID)
 
 	// timestamp (3 bytes) is set to 0 so bytes 1-3 are unmodified (they're already zero-initialized)
@@ -188,6 +193,7 @@ func generateConnectResponseSuccess(csID uint32) []byte {
 	connectResponseSuccessMessage[7] = CommandMessageAMF0
 
 	// Next 4 bytes specify the stream ID, leave it at 0
+	// NetConnection is the default communication channel, which has a stream ID 0. Protocol and a few command messages, including createStream, use the default communication channel.
 	//connectResponseSuccessMessage[8] = 0
 	//connectResponseSuccessMessage[9] = 0
 	//connectResponseSuccessMessage[10] = 0
@@ -205,19 +211,20 @@ func generateConnectResponseSuccess(csID uint32) []byte {
 }
 
 func generateOnFCPublishMessage(csID uint32, transactionID float64, streamKey string) []byte {
-	onFCPublishString, _ := amf0.Encode("onFCPublishString")
-	number0, _ := amf0.Encode(0)
-	null, _ := amf0.Encode(nil)
-	obj, _ := amf0.Encode(map[string]interface{}{
+	onFCPublishString, _ := amf0.Encode("onFCPublish")
+	tId, _ := amf0.Encode(0)
+	commandObject, _ := amf0.Encode(nil)
+	information, _ := amf0.Encode(map[string]interface{}{
 		"level": "status",
 		"code": "NetStream.Publish.Start",
 		"description": "FCPublish to stream " + streamKey,
 	})
-	bodyLength := len(onFCPublishString) + len(number0) + len(null) + len(obj)
+	bodyLength := len(onFCPublishString) + len(tId) + len(commandObject) + len(information)
 
 	onFCPublishMessage := make([]byte, 12, 180)
 	//---- HEADER ----//
 	// if csid = 3, does this mean these are not control messages/commands?
+	// TODO: handle potential cases where csID is more than 1 byte
 	onFCPublishMessage[0] = byte(csID)
 
 	// Leave timestamp at 0 (bytes 1-3)
@@ -231,12 +238,91 @@ func generateOnFCPublishMessage(csID uint32, transactionID float64, streamKey st
 	onFCPublishMessage[7] = CommandMessageAMF0
 
 	// Leave stream ID at 0 (bytes 8-11)
+	// NetConnection is the default communication channel, which has a stream ID 0. Protocol and a few command messages, including createStream, use the default communication channel.
 
 	//---- BODY ----//
 	onFCPublishMessage = append(onFCPublishMessage, onFCPublishString...)
-	onFCPublishMessage = append(onFCPublishMessage, number0...)
-	onFCPublishMessage = append(onFCPublishMessage, null...)
-	onFCPublishMessage = append(onFCPublishMessage, obj...)
+	onFCPublishMessage = append(onFCPublishMessage, tId...)
+	onFCPublishMessage = append(onFCPublishMessage, commandObject...)
+	onFCPublishMessage = append(onFCPublishMessage, information...)
 
 	return onFCPublishMessage
+}
+
+func generateCreateStreamResponse(csID uint32, transactionID float64, commandObject map[string]interface{}) []byte {
+	result, _ := amf0.Encode("_result")
+	tID, _ := amf0.Encode(transactionID)
+	commandObjectResponse, _ := amf0.Encode(nil)
+	// ID of the stream that was opened. We could also send an object with additional information if an error occurred, instead of a number.
+	// Subsequent chunks will be sent by the client on the stream ID specified here.
+	// TODO: is this a fixed value?
+	streamID, _ := amf0.Encode(config.DefaultStreamID)
+	bodyLength := len(result) + len(tID) + len(commandObjectResponse) + len(streamID)
+
+	createStreamResponseMessage := make([]byte, 12, 50)
+	//---- HEADER ----//
+	// if csid = 3, does this mean these are not control messages/commands?
+	// TODO: handle potential cases where csID is more than 1 byte
+	createStreamResponseMessage[0] = byte(csID)
+
+	// Leave timestamp at 0 (bytes 1-3)
+
+	// Set body size (bytes 4-6) to bodyLength
+	createStreamResponseMessage[4] = byte((bodyLength >> 16) & 0xFF)
+	createStreamResponseMessage[5] = byte((bodyLength >> 8) & 0xFF)
+	createStreamResponseMessage[6] = byte(bodyLength)
+
+	// Set type to AMF0 command (20)
+	createStreamResponseMessage[7] = CommandMessageAMF0
+
+	// Leave stream ID at 0 (bytes 8-11)
+	// NetConnection is the default communication channel, which has a stream ID 0. Protocol and a few command messages, including createStream, use the default communication channel.
+
+	//---- BODY ----//
+	createStreamResponseMessage = append(createStreamResponseMessage, result...)
+	createStreamResponseMessage = append(createStreamResponseMessage, tID...)
+	createStreamResponseMessage = append(createStreamResponseMessage, commandObjectResponse...)
+	createStreamResponseMessage = append(createStreamResponseMessage, streamID...)
+
+	return createStreamResponseMessage
+}
+
+func generateStatusMessage(transactionID float64, streamID uint32, infoObject map[string]interface{}) []byte {
+	commandName, _ := amf0.Encode("onStatus")
+	tID, _ := amf0.Encode(transactionID)
+	// Status messages don't have a command object, so encode nil
+	commandObject, _ := amf0.Encode(nil)
+	info, _ := amf0.Encode(infoObject)
+	bodyLength := len(commandName) + len(tID) + len(commandObject) + len(info)
+
+	createStreamResponseMessage := make([]byte, 12, 150)
+	//---- HEADER ----//
+	// if csid = 3, does this mean these are not control messages/commands?
+	createStreamResponseMessage[0] = 3 // Twitch sends 3
+
+	// Leave timestamp at 0 (bytes 1-3)
+
+	// Set body size (bytes 4-6) to bodyLength
+	createStreamResponseMessage[4] = byte((bodyLength >> 16) & 0xFF)
+	createStreamResponseMessage[5] = byte((bodyLength >> 8) & 0xFF)
+	createStreamResponseMessage[6] = byte(bodyLength)
+
+	// Set type to AMF0 command (20)
+	createStreamResponseMessage[7] = CommandMessageAMF0
+
+	// Set stream ID to whatever stream ID the request had (bytes 8-11)
+	createStreamResponseMessage[8] = byte((streamID >> 24) & 0xFF)
+	createStreamResponseMessage[9] = byte((streamID >> 16) & 0xFF)
+	createStreamResponseMessage[10] = byte((streamID >> 8) & 0xFF)
+	createStreamResponseMessage[11] = byte(streamID)
+
+	// NetConnection is the default communication channel, which has a stream ID 0. Protocol and a few command messages, including createStream, use the default communication channel.
+
+	//---- BODY ----//
+	createStreamResponseMessage = append(createStreamResponseMessage, commandName...)
+	createStreamResponseMessage = append(createStreamResponseMessage, tID...)
+	createStreamResponseMessage = append(createStreamResponseMessage, commandObject...)
+	createStreamResponseMessage = append(createStreamResponseMessage, info...)
+
+	return createStreamResponseMessage
 }

@@ -53,6 +53,33 @@ const LimitHard uint8 = 0
 const LimitSoft uint8 = 1
 const LimitDynamic uint8 = 2
 
+type surroundSound struct {
+	stereoSound bool
+	twoPointOneSound bool
+	threePointOneSound bool
+	fourPointZeroSound bool
+	fourPointOneSound bool
+	fivePointOneSound bool
+	sevenPointOneSound bool
+}
+
+type clientMetadata struct {
+	duration float64
+	fileSize float64
+	width float64
+	height float64
+	videoCodecID string
+	videoDataRate float64
+	frameRate float64
+	audioCodecID string
+	audioDataRate float64
+	audioSampleRate float64
+	audioSampleSize float64
+	audioChannels float64
+	surroundSound surroundSound
+	encoder string
+}
+
 type ChunkHandler struct {
 	socket          *bufio.ReadWriter
 	prevChunkHeader *ChunkHeader
@@ -61,6 +88,7 @@ type ChunkHandler struct {
 	bytesReceived   uint32
 	outBandwidth    uint32
 	limit           uint8
+	clientMetadata  clientMetadata
 
 	// app data
 	app string
@@ -110,6 +138,7 @@ func NewChunkHandler(reader *bufio.ReadWriter) *ChunkHandler {
 }
 
 func (chunkHandler *ChunkHandler) ReadChunkHeader() (*ChunkHeader, error) {
+	fmt.Println("reading chunk header")
 	ch := &ChunkHeader{}
 	var err error
 	if err = chunkHandler.readBasicHeader(ch); err != nil {
@@ -139,7 +168,19 @@ func (chunkHandler *ChunkHandler) ReadChunkData(header *ChunkHeader) (*ChunkData
 		return chunkHandler.handleUserControlMessage(header)
 	case CommandMessageAMF0, CommandMessageAMF3:
 		fmt.Println("received command message")
-		return chunkHandler.handleCommandMessage(header.BasicHeader.ChunkStreamID, header.MessageHeader.MessageTypeID, header.MessageHeader.MessageLength)
+		return chunkHandler.handleCommandMessage(header.BasicHeader.ChunkStreamID, header.MessageHeader.MessageStreamID, header.MessageHeader.MessageTypeID, header.MessageHeader.MessageLength)
+	case DataMessageAMF0, DataMessageAMF3:
+		return chunkHandler.handleDataMessage(header.MessageHeader.MessageTypeID, header.MessageHeader.MessageLength)
+	case AudioMessage, VideoMessage:
+		// TODO: handle audio and video messages. For now just read the payload and continue
+		messageLength := header.MessageHeader.MessageLength
+		payload := make([]byte, messageLength)
+		_, err := io.ReadAtLeast(chunkHandler.socket, payload, int(messageLength))
+		if err != nil {
+			return nil, err
+		}
+	default:
+		fmt.Println("received unknown message header")
 	}
 
 	return nil, nil
@@ -272,6 +313,8 @@ func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) error {
 		//mh.MessageLength = chunk.prevChunkHeader.MessageHeader.MessageLength
 		//mh.MessageTypeID = chunk.prevChunkHeader.MessageHeader.MessageTypeID
 		//mh.MessageStreamID = chunk.prevChunkHeader.MessageHeader.MessageStreamID
+		header.MessageHeader = mh
+		return nil
 	}
 	return nil
 }
@@ -391,7 +434,7 @@ func (chunkHandler *ChunkHandler) updateBytesReceived(i uint32) {
 	}
 }
 
-func (chunkHandler *ChunkHandler) handleCommandMessage(csID uint32, commandType uint8, messageLength uint32) (*ChunkData, error) {
+func (chunkHandler *ChunkHandler) handleCommandMessage(csID uint32, streamID uint32, commandType uint8, messageLength uint32) (*ChunkData, error) {
 	payload := make([]byte, messageLength)
 	_, err := io.ReadAtLeast(chunkHandler.socket, payload, int(messageLength))
 	if err != nil {
@@ -405,7 +448,7 @@ func (chunkHandler *ChunkHandler) handleCommandMessage(csID uint32, commandType 
 			return nil, err
 		}
 
-		chunkHandler.handleCommandAmf0(csID, commandName.(string), payload[amf0.Size(commandName.(string)):])
+		chunkHandler.handleCommandAmf0(csID, streamID, commandName.(string), payload[amf0.Size(commandName.(string)):])
 		return &ChunkData{
 			payload: payload,
 		}, nil
@@ -416,7 +459,7 @@ func (chunkHandler *ChunkHandler) handleCommandMessage(csID uint32, commandType 
 	return nil, nil
 }
 
-func (chunkHandler *ChunkHandler) handleCommandAmf0(csID uint32, commandName string, payload []byte) {
+func (chunkHandler *ChunkHandler) handleCommandAmf0(csID uint32, streamID uint32, commandName string, payload []byte) {
 	switch commandName {
 	case "connect":
 		transactionId, _ := amf0.Decode(payload)
@@ -426,7 +469,7 @@ func (chunkHandler *ChunkHandler) handleCommandAmf0(csID uint32, commandName str
 		commandObject, _ := amf0.Decode(payload)
 		if config.Debug {
 			fmt.Println(fmt.Sprintf("received command connect with transactionId %f", transactionId.(float64)))
-			fmt.Println(fmt.Sprintf("received command connect with commandObject %+v", commandObject.(map[string]interface{})))
+			fmt.Println(fmt.Sprintf("received command connect with commandObject %+v", commandObject))
 		}
 		chunkHandler.onConnect(csID, transactionId.(float64), commandObject.(map[string]interface{}))
 	case "releaseStream":
@@ -451,6 +494,43 @@ func (chunkHandler *ChunkHandler) handleCommandAmf0(csID uint32, commandName str
 		payload = payload[byteLength:]
 		streamKey, _ := amf0.Decode(payload)
 		chunkHandler.onFCPublish(csID, transactionId.(float64), streamKey.(string))
+	case "createStream":
+		transactionId, _ := amf0.Decode(payload)
+		byteLength := amf0.Size(transactionId)
+		// Update our payload to read the next property (commandObject)
+		payload = payload[byteLength:]
+		commandObject, _ := amf0.Decode(payload)
+		if config.Debug {
+			fmt.Println(fmt.Sprintf("received command createStream with transactionId %f", transactionId.(float64)))
+			fmt.Println(fmt.Sprintf("received command createStream with commandObject %+v", commandObject))
+		}
+		// Handle cases where the command object that was sent was null
+		switch commandObject.(type) {
+		case nil:
+			chunkHandler.onCreateStream(csID, transactionId.(float64), nil)
+		default:
+			chunkHandler.onCreateStream(csID, transactionId.(float64), commandObject.(map[string]interface{}))
+		}
+	case "publish":
+		transactionId, _ := amf0.Decode(payload)
+		byteLength := amf0.Size(transactionId)
+		// Update our payload to read the next property (commandObject)
+		payload = payload[byteLength:]
+		// Command object is set to null for the publish command
+		commandObject, _ := amf0.Decode(payload)
+		byteLength = amf0.Size(commandObject)
+		payload = payload[byteLength:]
+		// name with which the stream is published (basically the streamKey)
+		streamKey, _ := amf0.Decode(payload)
+		byteLength = amf0.Size(streamKey)
+		payload = payload[byteLength:]
+		// Publishing type: "live", "record", or "append"
+		// - record: The stream is published and the data is recorded to a new file. The file is stored on the server
+		// in a subdirectory within the directory that contains the server application. If the file already exists, it is overwritten.
+		// - append: The stream is published and the data is appended to a file. If no file is found, it is created.
+		// - live: Live data is published without recording it in a file.
+		publishingType, _ := amf0.Decode(payload)
+		chunkHandler.onPublish(csID, streamID, transactionId.(float64), streamKey.(string), publishingType.(string))
 	}
 }
 
@@ -516,7 +596,8 @@ func (chunkHandler *ChunkHandler) onConnect(csID uint32, transactionID float64, 
 		// TODO: connect to the app (whatever that is)
 		// After sending the window ack size message, the server sends the set peer bandwidth message
 		chunkHandler.sendSetPeerBandWidth(config.DefaultClientWindowSize, LimitDynamic)
-		// Send the User Control Message to begin stream with stream ID DefaultPublishStream (which is 0)
+		// Send the User Control Message to begin stream with stream ID = DefaultPublishStream (which is 0)
+		// Subsequent messages sent by the client will have stream ID = DefaultPublishStream, until another sendBeginStream message is sent
 		chunkHandler.sendBeginStream(config.DefaultPublishStream)
 		// Send Set Chunk Size message
 		chunkHandler.sendSetChunkSize(config.DefaultChunkSize)
@@ -544,4 +625,131 @@ func (chunkHandler *ChunkHandler) sendOnFCPublish(csID uint32, transactionID flo
 	message := generateOnFCPublishMessage(csID, transactionID, streamKey)
 	chunkHandler.socket.Write(message)
 	chunkHandler.socket.Flush()
+}
+
+func (chunkHandler *ChunkHandler) onCreateStream(csID uint32, transactionID float64, commandObject map[string]interface{}) {
+	message := generateCreateStreamResponse(csID, transactionID, commandObject)
+	chunkHandler.socket.Write(message)
+	chunkHandler.socket.Flush()
+
+	chunkHandler.sendBeginStream(uint32(config.DefaultStreamID))
+}
+
+func (chunkHandler *ChunkHandler) onPublish(csID uint32, streamID uint32, transactionID float64, streamKey string, publishingType string) {
+	// TODO: Handle things like look up the user's stream key, check if it's valid.
+	// TODO: For example: twitch returns "Publishing live_user_<username>" in the description.
+	// TODO: Handle things like recording into a file if publishingType = "record" or "append"
+	// infoObject should have at least three properties: level, code, and description. But may contain other properties.
+	infoObject := map[string]interface{}{
+		"level": "status",
+		"code": "NetStream.Publish.Start",
+		"description": "Publishing live_user_<x>",
+	}
+	// TODO: the transaction ID for onStatus messages should be 0 as per the spec. But twitch sends the transaction ID that was in the request to "publish".
+	// For now, reply with the same transaction ID.
+	message := generateStatusMessage(transactionID, streamID, infoObject)
+	chunkHandler.socket.Write(message)
+	chunkHandler.socket.Flush()
+}
+
+func (chunkHandler *ChunkHandler) handleDataMessage(dataType uint8, messageLength uint32) (*ChunkData, error) {
+	payload := make([]byte, messageLength)
+	_, err := io.ReadAtLeast(chunkHandler.socket, payload, int(messageLength))
+	if err != nil {
+		return nil, err
+	}
+
+	switch dataType {
+	case DataMessageAMF0:
+		dataName, err := amf0.Decode(payload) // Decode the command name (always the first string in the payload)
+		if err != nil {
+			return nil, err
+		}
+
+		chunkHandler.handleDataMessageAmf0(dataName.(string), payload[amf0.Size(dataName.(string)):])
+		return &ChunkData{
+			payload: payload,
+		}, nil
+	case DataMessageAMF3:
+		// TODO: implement AMF3
+	}
+	return nil, nil
+}
+
+func (chunkHandler *ChunkHandler) handleDataMessageAmf0(dataName string, payload []byte) {
+	switch dataName {
+	case "@setDataFrame":
+		// @setDataFrame message includes a string with value "onMetadata".
+		// Ignore it for now.
+		onMetadata, _ := amf0.Decode(payload)
+		payload = payload[amf0.Size(onMetadata):]
+		// Metadata is sent as an ECMAArray
+		metadata, _ := amf0.Decode(payload)
+		chunkHandler.setClientMetadata(metadata.(amf0.ECMAArray))
+		fmt.Printf("clientMetadata %+v", chunkHandler.clientMetadata)
+	}
+}
+
+func (chunkHandler *ChunkHandler) setClientMetadata(obj amf0.ECMAArray) {
+	if val, exists := obj["duration"]; exists {
+		chunkHandler.clientMetadata.duration = val.(float64)
+	}
+	if val, exists := obj["fileSize"]; exists {
+		chunkHandler.clientMetadata.fileSize = val.(float64)
+	}
+	if val, exists := obj["width"]; exists {
+		chunkHandler.clientMetadata.width = val.(float64)
+	}
+	if val, exists := obj["height"]; exists {
+		chunkHandler.clientMetadata.height = val.(float64)
+	}
+	if val, exists := obj["videocodecid"]; exists {
+		chunkHandler.clientMetadata.videoCodecID = val.(string)
+	}
+	if val, exists := obj["videodatarate"]; exists {
+		chunkHandler.clientMetadata.videoDataRate = val.(float64)
+	}
+	if val, exists := obj["framerate"]; exists {
+		chunkHandler.clientMetadata.frameRate = val.(float64)
+	}
+	if val, exists := obj["audiocodecid"]; exists {
+		chunkHandler.clientMetadata.audioCodecID = val.(string)
+	}
+	if val, exists := obj["audiodatarate"]; exists {
+		chunkHandler.clientMetadata.audioDataRate = val.(float64)
+	}
+	if val, exists := obj["audiosamplerate"]; exists {
+		chunkHandler.clientMetadata.audioSampleRate = val.(float64)
+	}
+	if val, exists := obj["audiosamplesize"]; exists {
+		chunkHandler.clientMetadata.audioSampleSize = val.(float64)
+	}
+	if val, exists := obj["audiochannels"]; exists {
+		chunkHandler.clientMetadata.audioChannels = val.(float64)
+	}
+	if val, exists := obj["stereo"]; exists {
+		chunkHandler.clientMetadata.surroundSound.stereoSound = val.(bool)
+	}
+	if val, exists := obj["2.1"]; exists {
+		chunkHandler.clientMetadata.surroundSound.twoPointOneSound = val.(bool)
+	}
+	if val, exists := obj["3.1"]; exists {
+		chunkHandler.clientMetadata.surroundSound.threePointOneSound = val.(bool)
+	}
+	if val, exists := obj["4.0"]; exists {
+		chunkHandler.clientMetadata.surroundSound.fourPointZeroSound = val.(bool)
+	}
+	if val, exists := obj["4.1"]; exists {
+		chunkHandler.clientMetadata.surroundSound.fourPointOneSound = val.(bool)
+	}
+	if val, exists := obj["5.1"]; exists {
+		chunkHandler.clientMetadata.surroundSound.fivePointOneSound = val.(bool)
+	}
+	if val, exists := obj["7.1"]; exists {
+		chunkHandler.clientMetadata.surroundSound.sevenPointOneSound = val.(bool)
+	}
+	if val, exists := obj["encoder"]; exists {
+		chunkHandler.clientMetadata.encoder = val.(string)
+	}
+
 }

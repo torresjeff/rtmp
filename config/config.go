@@ -13,3 +13,5 @@ const FlashMediaServerVersion string = "FMS/3,5,7,7009"
 const Capabilities int = 31
 // TODO: what does mode mean?
 const Mode int = 1
+
+const DefaultStreamID int = 1
