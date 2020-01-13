@@ -10,6 +10,7 @@ const NetConnectionSucces = "NetConnection.Connect.Success"
 
 func generateWindowAckSizeMessage(size uint32) []byte {
 	windowAckSizeMessage := make([]byte, 16)
+	//---- HEADER ----//
 	// fmt = 0 and csid = 2 encoded in 1 byte
 	windowAckSizeMessage[0] = 2
 	// timestamp (3 bytes) is set to 0 so bytes 1-3 are unmodified (they're already zero-initialized)
@@ -30,6 +31,7 @@ func generateWindowAckSizeMessage(size uint32) []byte {
 	//windowAckSizeMessage[10] = 0
 	//windowAckSizeMessage[11] = 0
 
+	//---- BODY ----//
 	// Finally, store the actual window size message the client should use in the last 4 bytes
 	binary.BigEndian.PutUint32(windowAckSizeMessage[12:], size)
 
@@ -38,8 +40,9 @@ func generateWindowAckSizeMessage(size uint32) []byte {
 
 func generateSetPeerBandwidthMessage(size uint32, limitType uint8) []byte {
 	setPeerBandwidthMessage := make([]byte, 17)
-
+	//---- HEADER ----//
 	// fmt = 0 and csid = 2 encoded in 1 byte.
+	// Chunk Stream ID with value 2 is reserved for low-level protocol control messages and commands.
 	setPeerBandwidthMessage[0] = 2
 	// timestamp (3 bytes) is set to 0 so bytes 1-3 are unmodified (they're already zero-initialized)
 	//setPeerBandwidthMessage[1] = 0
@@ -60,6 +63,7 @@ func generateSetPeerBandwidthMessage(size uint32, limitType uint8) []byte {
 	//setPeerBandwidthMessage[10] = 0
 	//setPeerBandwidthMessage[11] = 0
 
+	//---- BODY ----//
 	// Store the actual peer bandwidth the client should use in the next 4 bytes
 	binary.BigEndian.PutUint32(setPeerBandwidthMessage[12:], size)
 
@@ -74,8 +78,9 @@ func generateSetPeerBandwidthMessage(size uint32, limitType uint8) []byte {
 
 func generateStreamBeginMessage(streamId uint32) []byte {
 	streamBeginMessage := make([]byte, 18)
-
+	//---- HEADER ----//
 	// fmt = 0 and csid = 2 encoded in 1 byte.
+	// Chunk Stream ID with value 2 is reserved for low-level protocol control messages and commands.
 	streamBeginMessage[0] = 2
 	// timestamp (3 bytes) is set to 0 so bytes 1-3 are unmodified (they're already zero-initialized)
 	//streamBeginMessage[1] = 0
@@ -96,6 +101,7 @@ func generateStreamBeginMessage(streamId uint32) []byte {
 	//streamBeginMessage[10] = 0
 	//streamBeginMessage[11] = 0
 
+	//---- BODY ----//
 	// The next two bytes specify the the event type. In our case, since this is a Stream Begin message, it has event type = 0. Leave the next two bytes at 0.
 	//streamBeginMessage[12] = 0
 	//streamBeginMessage[13] = 0
@@ -108,7 +114,9 @@ func generateStreamBeginMessage(streamId uint32) []byte {
 
 func generateSetChunkSizeMessage(chunkSize uint32) []byte {
 	setChunkSizeMessage := make([]byte, 16)
+	//---- HEADER ----//
 	// fmt = 0 and csid = 2 encoded in 1 byte
+	// Chunk Stream ID with value 2 is reserved for low-level protocol control messages and commands.
 	setChunkSizeMessage[0] = 2
 	// timestamp (3 bytes) is set to 0 so bytes 1-3 are unmodified (they're already zero-initialized)
 	//setChunkSizeMessage[1] = 0
@@ -128,13 +136,14 @@ func generateSetChunkSizeMessage(chunkSize uint32) []byte {
 	//setChunkSizeMessage[10] = 0
 	//setChunkSizeMessage[11] = 0
 
+	//---- BODY ----//
 	// Finally, store the actual chunk size client should use in the last 4 bytes
 	binary.BigEndian.PutUint32(setChunkSizeMessage[12:], chunkSize)
 
 	return setChunkSizeMessage
 }
 
-func generateConnectResponseSuccess() []byte {
+func generateConnectResponseSuccess(csID uint32) []byte {
 
 	// Body of our message
 	commandName, _ := amf0.Encode("_result")
@@ -160,9 +169,10 @@ func generateConnectResponseSuccess() []byte {
 
 	// 12 bytes for the header
 	connectResponseSuccessMessage := make([]byte, 12, 300)
+	//---- HEADER ----//
 	// fmt = 0 and csid = 3 encoded in 1 byte
-	// TODO: why does Twitch send csId = 3?
-	connectResponseSuccessMessage[0] = 3
+	// TODO: why does Twitch send csId = 3? is it because it is replying to the connect() request which sent csID = 3?
+	connectResponseSuccessMessage[0] = byte(csID)
 
 	// timestamp (3 bytes) is set to 0 so bytes 1-3 are unmodified (they're already zero-initialized)
 	//connectResponseSuccessMessage[1] = 0
@@ -177,11 +187,13 @@ func generateConnectResponseSuccess() []byte {
 	// Set type to AMF0 command (20)
 	connectResponseSuccessMessage[7] = CommandMessageAMF0
 
-	// Next 3 bytes specify the stream ID, leave it at 0
+	// Next 4 bytes specify the stream ID, leave it at 0
 	//connectResponseSuccessMessage[8] = 0
 	//connectResponseSuccessMessage[9] = 0
 	//connectResponseSuccessMessage[10] = 0
+	//connectResponseSuccessMessage[11] = 0
 
+	//---- BODY ----//
 	// Set the body
 	connectResponseSuccessMessage = append(connectResponseSuccessMessage, commandName...)
 	connectResponseSuccessMessage = append(connectResponseSuccessMessage, transactionId...)
@@ -190,5 +202,41 @@ func generateConnectResponseSuccess() []byte {
 
 
 	return connectResponseSuccessMessage
+}
 
+func generateOnFCPublishMessage(csID uint32, transactionID float64, streamKey string) []byte {
+	onFCPublishString, _ := amf0.Encode("onFCPublishString")
+	number0, _ := amf0.Encode(0)
+	null, _ := amf0.Encode(nil)
+	obj, _ := amf0.Encode(map[string]interface{}{
+		"level": "status",
+		"code": "NetStream.Publish.Start",
+		"description": "FCPublish to stream " + streamKey,
+	})
+	bodyLength := len(onFCPublishString) + len(number0) + len(null) + len(obj)
+
+	onFCPublishMessage := make([]byte, 12, 180)
+	//---- HEADER ----//
+	// if csid = 3, does this mean these are not control messages/commands?
+	onFCPublishMessage[0] = byte(csID)
+
+	// Leave timestamp at 0 (bytes 1-3)
+
+	// Set body size (bytes 4-6) to bodyLength
+	onFCPublishMessage[4] = byte((bodyLength >> 16) & 0xFF)
+	onFCPublishMessage[5] = byte((bodyLength >> 8) & 0xFF)
+	onFCPublishMessage[6] = byte(bodyLength)
+
+	// Set type to AMF0 command (20)
+	onFCPublishMessage[7] = CommandMessageAMF0
+
+	// Leave stream ID at 0 (bytes 8-11)
+
+	//---- BODY ----//
+	onFCPublishMessage = append(onFCPublishMessage, onFCPublishString...)
+	onFCPublishMessage = append(onFCPublishMessage, number0...)
+	onFCPublishMessage = append(onFCPublishMessage, null...)
+	onFCPublishMessage = append(onFCPublishMessage, obj...)
+
+	return onFCPublishMessage
 }

@@ -139,7 +139,7 @@ func (chunkHandler *ChunkHandler) ReadChunkData(header *ChunkHeader) (*ChunkData
 		return chunkHandler.handleUserControlMessage(header)
 	case CommandMessageAMF0, CommandMessageAMF3:
 		fmt.Println("received command message")
-		return chunkHandler.handleCommandMessage(header.MessageHeader.MessageTypeID, header.MessageHeader.MessageLength)
+		return chunkHandler.handleCommandMessage(header.BasicHeader.ChunkStreamID, header.MessageHeader.MessageTypeID, header.MessageHeader.MessageLength)
 	}
 
 	return nil, nil
@@ -177,7 +177,7 @@ func (chunkHandler *ChunkHandler) readBasicHeader(header *ChunkHeader) error {
 		basicHeader.ChunkStreamID = uint32(binary.BigEndian.Uint16(id))+ 64
 		chunkHandler.bytesReceived += 2
 	} else {
-		// if csid is neither 0 or 1, that means we're dealing with chunk basic header 1 (uses 1 byte). This represents the actual chunk stream ID.
+		// if csid is neither 0 or 1, that means we're dealing with chunk basic header 1 (uses 1 byte).
 		basicHeader.ChunkStreamID = uint32(csid)
 	}
 
@@ -388,16 +388,10 @@ func (chunkHandler *ChunkHandler) updateBytesReceived(i uint32) {
 	// TODO: implement send ack
 	if chunkHandler.bytesReceived >= chunkHandler.windowAckSize {
 		chunkHandler.sendAck()
-		// Reset the number of bytes received
-		chunkHandler.bytesReceived = 0
 	}
 }
 
-func (chunkHandler *ChunkHandler) sendAck() {
-	// TODO: implement send the acknowledgemnent
-}
-
-func (chunkHandler *ChunkHandler) handleCommandMessage(commandType uint8, messageLength uint32) (*ChunkData, error) {
+func (chunkHandler *ChunkHandler) handleCommandMessage(csID uint32, commandType uint8, messageLength uint32) (*ChunkData, error) {
 	payload := make([]byte, messageLength)
 	_, err := io.ReadAtLeast(chunkHandler.socket, payload, int(messageLength))
 	if err != nil {
@@ -411,7 +405,7 @@ func (chunkHandler *ChunkHandler) handleCommandMessage(commandType uint8, messag
 			return nil, err
 		}
 
-		chunkHandler.handleCommandAmf0(commandName.(string), payload[amf0.Size(commandName.(string)):])
+		chunkHandler.handleCommandAmf0(csID, commandName.(string), payload[amf0.Size(commandName.(string)):])
 		return &ChunkData{
 			payload: payload,
 		}, nil
@@ -422,12 +416,11 @@ func (chunkHandler *ChunkHandler) handleCommandMessage(commandType uint8, messag
 	return nil, nil
 }
 
-func (chunkHandler *ChunkHandler) handleCommandAmf0(commandName string, payload []byte) {
+func (chunkHandler *ChunkHandler) handleCommandAmf0(csID uint32, commandName string, payload []byte) {
 	switch commandName {
 	case "connect":
-		fmt.Println("received connect command")
 		transactionId, _ := amf0.Decode(payload)
-		byteLength := amf0.Size(transactionId.(float64))
+		byteLength := amf0.Size(transactionId)
 		// Update our payload to read the next property (commandObject)
 		payload = payload[byteLength:]
 		commandObject, _ := amf0.Decode(payload)
@@ -435,41 +428,29 @@ func (chunkHandler *ChunkHandler) handleCommandAmf0(commandName string, payload 
 			fmt.Println(fmt.Sprintf("received command connect with transactionId %f", transactionId.(float64)))
 			fmt.Println(fmt.Sprintf("received command connect with commandObject %+v", commandObject.(map[string]interface{})))
 		}
-
-		// TODO: should this data be stored in the chunkHandler or in the session?
-		commandObjectMap := commandObject.(map[string]interface{})
-
-		// Playback clients send other properties in the command object, such as what audio/video codecs the client supports
-		chunkHandler.app = commandObjectMap["app"].(string)
-		if _, exists := commandObjectMap["flashVer"]; exists {
-			chunkHandler.flashVer = commandObjectMap["flashVer"].(string)
-		} else if _, exists := commandObjectMap["flashver"]; exists {
-			chunkHandler.flashVer = commandObjectMap["flashver"].(string)
-		}
-		chunkHandler.swfUrl = commandObjectMap["swfUrl"].(string)
-		chunkHandler.tcUrl = commandObjectMap["tcUrl"].(string)
-		chunkHandler.typeOfStream = commandObjectMap["type"].(string)
-
-		// If the app name to connect  is PublishApp (whatever the user specifies in the config, ie. "app", "app/publish"),
-		// this means the user wants to stream, follow the flow to start a stream
-		// TODO: is this specific for publishing? or does this apply for consuming clients as well?
-		if chunkHandler.app == config.PublishApp {
-			// As per the specification, after the connect command, the server sends the protocol message Window Acknowledgment Size
-			chunkHandler.sendWindowAckSize(config.DefaultClientWindowSize)
-			// TODO: connect to the app (whatever that is)
-			// After sending the window ack size message, the server sends the set peer bandwidth message
-			chunkHandler.sendSetPeerBandWidth(config.DefaultClientWindowSize, LimitDynamic)
-			// Send the User Control Message to begin stream with stream ID DefaultPublishStream (which is 0)
-			chunkHandler.sendBeginStream(config.DefaultPublishStream)
-			// Send Set Chunk Size message
-			chunkHandler.sendSetChunkSize(config.DefaultChunkSize)
-			// Send Connect Success response
-			chunkHandler.sendConnectSuccess()
-		} else {
-			fmt.Println("user trying to connect to app", chunkHandler.app, ", but the app doesn't exist")
-		}
-
-
+		chunkHandler.onConnect(csID, transactionId.(float64), commandObject.(map[string]interface{}))
+	case "releaseStream":
+		transactionId, _ := amf0.Decode(payload)
+		// Update our payload to read the next property (NULL)
+		byteLength := amf0.Size(transactionId)
+		payload = payload[byteLength:]
+		null, _ := amf0.Decode(payload)
+		// Update our payload to read the next property (stream key)
+		byteLength = amf0.Size(null)
+		payload = payload[byteLength:]
+		streamKey, _ := amf0.Decode(payload)
+		chunkHandler.onReleaseStream(csID, transactionId.(float64), streamKey.(string))
+	case "FCPublish":
+		transactionId, _ := amf0.Decode(payload)
+		// Update our payload to read the next property (NULL)
+		byteLength := amf0.Size(transactionId)
+		payload = payload[byteLength:]
+		null, _ := amf0.Decode(payload)
+		// Update our payload to read the next property (stream key)
+		byteLength = amf0.Size(null)
+		payload = payload[byteLength:]
+		streamKey, _ := amf0.Decode(payload)
+		chunkHandler.onFCPublish(csID, transactionId.(float64), streamKey.(string))
 	}
 }
 
@@ -498,8 +479,69 @@ func (chunkHandler *ChunkHandler) sendSetChunkSize(size uint32) {
 	chunkHandler.socket.Flush()
 }
 
-func (chunkHandler *ChunkHandler) sendConnectSuccess() {
-	message := generateConnectResponseSuccess()
+func (chunkHandler *ChunkHandler) sendConnectSuccess(csID uint32) {
+	message := generateConnectResponseSuccess(csID)
+	chunkHandler.socket.Write(message)
+	chunkHandler.socket.Flush()
+}
+
+func (chunkHandler *ChunkHandler) sendAck() {
+	// TODO: implement send the acknowledgemnent
+
+	// Reset the number of bytes received
+	chunkHandler.bytesReceived = 0
+}
+
+func (chunkHandler *ChunkHandler) onConnect(csID uint32, transactionID float64, commandObject map[string]interface{}) {
+	fmt.Println("received connect command")
+
+	// Playback clients send other properties in the command object, such as what audio/video codecs the client supports
+	// TODO: should this data be stored in the chunkHandler or in the session?
+	chunkHandler.app = commandObject["app"].(string)
+	if _, exists := commandObject["flashVer"]; exists {
+		chunkHandler.flashVer = commandObject["flashVer"].(string)
+	} else if _, exists := commandObject["flashver"]; exists {
+		chunkHandler.flashVer = commandObject["flashver"].(string)
+	}
+	chunkHandler.swfUrl = commandObject["swfUrl"].(string)
+	chunkHandler.tcUrl = commandObject["tcUrl"].(string)
+	chunkHandler.typeOfStream = commandObject["type"].(string)
+
+	// If the app name to connect  is PublishApp (whatever the user specifies in the config, ie. "app", "app/publish"),
+	// this means the user wants to stream, follow the flow to start a stream
+	// TODO: is this specific for publishing? or does this apply for consuming clients as well?
+	if chunkHandler.app == config.PublishApp {
+		// As per the specification, after the connect command, the server sends the protocol message Window Acknowledgment Size
+		chunkHandler.sendWindowAckSize(config.DefaultClientWindowSize)
+		// TODO: connect to the app (whatever that is)
+		// After sending the window ack size message, the server sends the set peer bandwidth message
+		chunkHandler.sendSetPeerBandWidth(config.DefaultClientWindowSize, LimitDynamic)
+		// Send the User Control Message to begin stream with stream ID DefaultPublishStream (which is 0)
+		chunkHandler.sendBeginStream(config.DefaultPublishStream)
+		// Send Set Chunk Size message
+		chunkHandler.sendSetChunkSize(config.DefaultChunkSize)
+		// Send Connect Success response
+		chunkHandler.sendConnectSuccess(csID)
+	} else {
+		fmt.Println("user trying to connect to app", chunkHandler.app, ", but the app doesn't exist")
+	}
+}
+
+func (chunkHandler *ChunkHandler) onReleaseStream(csID uint32, transactionID float64, streamKey string) {
+	// TODO: what does releaseStream actually do? Does it close the stream?
+	// TODO: check stuff like is stream key valid, is the user allowed to release the stream
+
+	// TODO: implement
+}
+
+func (chunkHandler *ChunkHandler) onFCPublish(csID uint32, transactionID float64, streamKey string) {
+	// TODO: check stuff like is stream key valid, is the user allowed to publish the stream
+
+	chunkHandler.sendOnFCPublish(csID, transactionID, streamKey)
+}
+
+func (chunkHandler *ChunkHandler) sendOnFCPublish(csID uint32, transactionID float64, streamKey string) {
+	message := generateOnFCPublishMessage(csID, transactionID, streamKey)
 	chunkHandler.socket.Write(message)
 	chunkHandler.socket.Flush()
 }
