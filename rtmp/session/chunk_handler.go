@@ -160,25 +160,76 @@ func (chunkHandler *ChunkHandler) ReadChunkHeader() (*ChunkHeader, error) {
 	return ch, nil
 }
 
+// assembleMessage is called when the length of a message is greater than the currently set chunkSize.
+// It returns the final payload of the message assembled from multiple chunks.
+func (chunkHandler *ChunkHandler) assembleMessage(messageLength uint32) ([]byte, error) {
+	payload := make([]byte, messageLength)
+
+	// Read the initial chunk data that was sent with the first chunk header
+	_, err := io.ReadFull(chunkHandler.socket, payload[:chunkHandler.inChunkSize])
+	if err != nil {
+		return nil, err
+	}
+	// Update the number of bytes read to the inChunkSize since we already read at least inChunkSize bytes
+	bytesRead := chunkHandler.inChunkSize
+	// While there are still more bytes to read
+	for bytesRead < messageLength {
+		// Read the next chunks (header + data) until we complete our message
+		_, err := chunkHandler.ReadChunkHeader()
+		if err != nil {
+			return nil, errors.New("error reading chunk while attempting to assemble a multi-chunk message" + err.Error())
+		}
+		// If this chunk is still not the end of the message, then read the whole chunk
+		if bytesRead + chunkHandler.inChunkSize < messageLength {
+			_, err := io.ReadFull(chunkHandler.socket, payload[bytesRead:bytesRead + chunkHandler.inChunkSize])
+			if err != nil {
+				return nil, err
+			}
+			bytesRead += chunkHandler.inChunkSize
+		} else {
+			// If this is the last chunk of the message, just read the remaining bytes
+			remainingBytes := messageLength - bytesRead
+			_, err := io.ReadFull(chunkHandler.socket, payload[bytesRead:bytesRead + remainingBytes])
+			if err != nil {
+				return nil, err
+			}
+			bytesRead += remainingBytes
+		}
+	}
+	return payload, nil
+}
+
 func (chunkHandler *ChunkHandler) ReadChunkData(header *ChunkHeader) (*ChunkData, error) {
-	switch header.MessageHeader.MessageTypeID {
-	case SetChunkSize, AbortMessage, Ack, WindowAckSize, SetPeerBandwidth:
-		return chunkHandler.handleControlMessage(header)
-	case UserControlMessage:
-		return chunkHandler.handleUserControlMessage(header)
-	case CommandMessageAMF0, CommandMessageAMF3:
-		fmt.Println("received command message")
-		return chunkHandler.handleCommandMessage(header.BasicHeader.ChunkStreamID, header.MessageHeader.MessageStreamID, header.MessageHeader.MessageTypeID, header.MessageHeader.MessageLength)
-	case DataMessageAMF0, DataMessageAMF3:
-		return chunkHandler.handleDataMessage(header.MessageHeader.MessageTypeID, header.MessageHeader.MessageLength)
-	case AudioMessage, VideoMessage:
-		// TODO: handle audio and video messages. For now just read the payload and continue
-		messageLength := header.MessageHeader.MessageLength
-		payload := make([]byte, messageLength)
+	messageLength := header.MessageHeader.MessageLength
+	var payload []byte
+	// Check if the length of the message is greater than the chunk size (default chunk size is 128 if no Set Chunk Size message has been received).
+	// If it is, we have to assemble the complete message from various chunks.
+	if messageLength > chunkHandler.inChunkSize {
+		messagePayload, err := chunkHandler.assembleMessage(messageLength)
+		if err != nil {
+			return nil, err
+		}
+		payload = messagePayload
+	} else {
+		payload = make([]byte, messageLength)
 		_, err := io.ReadAtLeast(chunkHandler.socket, payload, int(messageLength))
 		if err != nil {
 			return nil, err
 		}
+	}
+	switch header.MessageHeader.MessageTypeID {
+	case SetChunkSize, AbortMessage, Ack, WindowAckSize, SetPeerBandwidth:
+		return chunkHandler.handleControlMessage(header, payload)
+	case UserControlMessage:
+		return chunkHandler.handleUserControlMessage(header, payload)
+	case CommandMessageAMF0, CommandMessageAMF3:
+		fmt.Println("received command message")
+		return chunkHandler.handleCommandMessage(header.BasicHeader.ChunkStreamID, header.MessageHeader.MessageStreamID, header.MessageHeader.MessageTypeID, header.MessageHeader.MessageLength, payload)
+	case DataMessageAMF0, DataMessageAMF3:
+		return chunkHandler.handleDataMessage(header.MessageHeader.MessageTypeID, header.MessageHeader.MessageLength, payload)
+	case AudioMessage, VideoMessage:
+		// TODO: handle audio and video messages. For now just read the payload and continue
+
 	default:
 		fmt.Println("received unknown message header")
 	}
@@ -270,7 +321,7 @@ func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) error {
 		// Message type ID is only 1 byte, so read the byte directly
 		mh.MessageTypeID = uint8(messageHeader[6])
 		// Chunk type 1 message headers don't have a message stream ID. This chunk takes the same message stream ID as the previous chunk.
-		//mh.MessageStreamID = chunk.prevChunkHeader.MessageHeader.MessageStreamID
+		mh.MessageStreamID = chunkHandler.prevChunkHeader.MessageHeader.MessageStreamID
 
 		header.MessageHeader = mh
 		return nil
@@ -288,11 +339,11 @@ func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) error {
 		// NOTE: this uses the TimestampDelta field, not the Timestamp field (which is only used for chunk type 0)
 		mh.TimestampDelta = binary.BigEndian.Uint32(append([]byte{0x00}, messageHeader[:3]...))
 		// Chunk type 2 message headers don't have a message length. This chunk takes the same message length as the previous chunk.
-		//mh.MessageLength = chunk.prevChunkHeader.MessageHeader.MessageLength
+		mh.MessageLength = chunkHandler.prevChunkHeader.MessageHeader.MessageLength
 		// Chunk type 2 message headers don't have a message stream ID. This chunk takes the same message stream ID as the previous chunk.
-		//mh.MessageStreamID = chunk.prevChunkHeader.MessageHeader.MessageStreamID
+		mh.MessageStreamID = chunkHandler.prevChunkHeader.MessageHeader.MessageStreamID
 		// Chunk type 2 message headers don't have a message type ID. This chunk takes the same message type ID as the previous chunk.
-		//mh.MessageTypeID = chunk.prevChunkHeader.MessageHeader.MessageTypeID
+		mh.MessageTypeID = chunkHandler.prevChunkHeader.MessageHeader.MessageTypeID
 
 		header.MessageHeader = mh
 		return nil
@@ -302,17 +353,15 @@ func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) error {
 		}
 		// Chunk type 3 message headers don't have any data. All values are taken from the previous header.
 
-		// As per the spec: If a Type 3 chunk follows a Type 0 chunk, is this only useful for then the timestamp delta for this Type 3 chunk is the same as the timestamp of the Type 0 chunk.
-		// This would be handled by the RTMP client, though, to form audio and video messages. Since we aren't doing anything with the messages (just forwarding them to the client),
-		// we assume that the client will keep track of the previous chunk header.
-		//if chunk.prevChunkHeader.BasicHeader.FMT == ChunkType0 {
-		//	mh.TimestampDelta = chunk.prevChunkHeader.MessageHeader.Timestamp
-		//} else {
-		//	mh.TimestampDelta = chunk.prevChunkHeader.MessageHeader.TimestampDelta
-		//}
-		//mh.MessageLength = chunk.prevChunkHeader.MessageHeader.MessageLength
-		//mh.MessageTypeID = chunk.prevChunkHeader.MessageHeader.MessageTypeID
-		//mh.MessageStreamID = chunk.prevChunkHeader.MessageHeader.MessageStreamID
+		// As per the spec: If a Type 3 chunk follows a Type 0 chunk, then the timestamp delta for this Type 3 chunk is the same as the timestamp of the Type 0 chunk.
+		if chunkHandler.prevChunkHeader.BasicHeader.FMT == ChunkType0 {
+			mh.TimestampDelta = chunkHandler.prevChunkHeader.MessageHeader.Timestamp
+		} else {
+			mh.TimestampDelta = chunkHandler.prevChunkHeader.MessageHeader.TimestampDelta
+		}
+		mh.MessageLength = chunkHandler.prevChunkHeader.MessageHeader.MessageLength
+		mh.MessageTypeID = chunkHandler.prevChunkHeader.MessageHeader.MessageTypeID
+		mh.MessageStreamID = chunkHandler.prevChunkHeader.MessageHeader.MessageStreamID
 		header.MessageHeader = mh
 		return nil
 	}
@@ -329,8 +378,7 @@ func (chunkHandler *ChunkHandler) readExtendedTimestamp(header *ChunkHeader) err
 	return nil
 }
 
-func (chunkHandler *ChunkHandler) handleControlMessage(header *ChunkHeader) (*ChunkData, error) {
-	messageLength := header.MessageHeader.MessageLength
+func (chunkHandler *ChunkHandler) handleControlMessage(header *ChunkHeader, payload []byte) (*ChunkData, error) {
 	switch header.MessageHeader.MessageTypeID {
 	case SetChunkSize:
 		if config.Debug {
@@ -339,62 +387,35 @@ func (chunkHandler *ChunkHandler) handleControlMessage(header *ChunkHeader) (*Ch
 		// The payload of a set chunk size message is the new chunk size
 		// TODO: what if message length is greater than inChunkSize? in this case, the chunk has to be assembled to be able to interpret it
 		// TODO: for now, assume that all messages fit in a chunk
-		chunkSize := make([]byte, messageLength)
-		_, err := io.ReadAtLeast(chunkHandler.socket, chunkSize, int(messageLength))
-		if err != nil {
-			return nil, err
-		}
-		chunkHandler.inChunkSize = binary.BigEndian.Uint32(chunkSize)
+		chunkHandler.inChunkSize = binary.BigEndian.Uint32(payload)
 		if config.Debug {
 			fmt.Println("Set inChunkSize to", chunkHandler.inChunkSize)
 		}
 
 		return &ChunkData{
-			payload: chunkSize,
+			payload: payload,
 		}, nil
 	case AbortMessage:
 		// The payload of an abort message is the chunk stream ID whose current message is to be discarded
-		chunkStreamId := make([]byte, messageLength)
-		_, err := io.ReadAtLeast(chunkHandler.socket, chunkStreamId, int(messageLength))
-		if err != nil {
-			return nil, err
-		}
+		// TODO: implement abort
 		return &ChunkData{
-			payload: chunkStreamId,
+			payload: payload,
 		}, nil
 	case Ack:
 		// The payload of an ack message is the sequence number (number of bytes received so far)
-		sequenceNumber := make([]byte, messageLength)
-		_, err := io.ReadAtLeast(chunkHandler.socket, sequenceNumber, int(messageLength))
-		if err != nil {
-			return nil, err
-		}
 		return &ChunkData{
-			payload: sequenceNumber,
+			payload: payload,
 		}, nil
 	case WindowAckSize:
-		// The payload of a window ack size is the window size to use between acknowledgements
-		ackWindowSize := make([]byte, messageLength)
-		_, err := io.ReadAtLeast(chunkHandler.socket, ackWindowSize, int(messageLength))
-		if err != nil {
-			return nil, err
-		}
-
 		// the ack window size is in the first 4 bytes
-		chunkHandler.windowAckSize = binary.BigEndian.Uint32(ackWindowSize[:4])
+		chunkHandler.windowAckSize = binary.BigEndian.Uint32(payload[:4])
 
 		return &ChunkData{
-			payload: ackWindowSize,
+			payload: payload,
 		}, nil
 	case SetPeerBandwidth:
-		// The payload of a set peer bandwidth message is the window size and the limit type (hard, soft, dynamic)
-		ackWindowSize := make([]byte, messageLength)
-		_, err := io.ReadAtLeast(chunkHandler.socket, ackWindowSize, int(messageLength))
-		if err != nil {
-			return nil, err
-		}
-		//the ack window size is in the first 4 bytes
-		windowAckSize := binary.BigEndian.Uint32(ackWindowSize[:4])
+		// window ack size is in the first 4 bytes
+		windowAckSize := binary.BigEndian.Uint32(payload[:4])
 		// The peer receiving this message SHOULD respond with a Window Acknowledgement Size message if the window size
 		// is different from the last one sent to the sender of this message.
 		if chunkHandler.windowAckSize != windowAckSize {
@@ -406,21 +427,16 @@ func (chunkHandler *ChunkHandler) handleControlMessage(header *ChunkHeader) (*Ch
 		//limitType := ackWindowSize[4:]
 
 		return &ChunkData{
-			payload: ackWindowSize,
+			payload: payload,
 		}, nil
 	default:
 		return nil, errors.New("received unsupported message type ID")
 	}
 }
 
-func (chunkHandler *ChunkHandler) handleUserControlMessage(header *ChunkHeader) (*ChunkData, error) {
-	messageLength := header.MessageHeader.MessageLength
-	// The first 2 bytes of the payload define the event type, the rest of the payload is the event data (the size of event data is variable)
-	payload := make([]byte, messageLength)
-	_, err := io.ReadAtLeast(chunkHandler.socket, payload, int(messageLength))
-	if err != nil {
-		return nil, err
-	}
+func (chunkHandler *ChunkHandler) handleUserControlMessage(header *ChunkHeader, payload []byte) (*ChunkData, error) {
+	// TODO: handle the user control message
+
 	return &ChunkData{
 		payload: payload,
 	}, nil
@@ -434,12 +450,12 @@ func (chunkHandler *ChunkHandler) updateBytesReceived(i uint32) {
 	}
 }
 
-func (chunkHandler *ChunkHandler) handleCommandMessage(csID uint32, streamID uint32, commandType uint8, messageLength uint32) (*ChunkData, error) {
-	payload := make([]byte, messageLength)
-	_, err := io.ReadAtLeast(chunkHandler.socket, payload, int(messageLength))
-	if err != nil {
-		return nil, err
-	}
+func (chunkHandler *ChunkHandler) handleCommandMessage(csID uint32, streamID uint32, commandType uint8, messageLength uint32, payload []byte) (*ChunkData, error) {
+	//payload := make([]byte, messageLength)
+	//_, err := io.ReadAtLeast(chunkHandler.socket, payload, int(messageLength))
+	//if err != nil {
+	//	return nil, err
+	//}
 
 	switch commandType {
 	case CommandMessageAMF0:
@@ -572,21 +588,36 @@ func (chunkHandler *ChunkHandler) sendAck() {
 	chunkHandler.bytesReceived = 0
 }
 
-func (chunkHandler *ChunkHandler) onConnect(csID uint32, transactionID float64, commandObject map[string]interface{}) {
-	fmt.Println("received connect command")
-
+func (chunkHandler *ChunkHandler) storeMetadata(metadata map[string]interface{}) {
 	// Playback clients send other properties in the command object, such as what audio/video codecs the client supports
 	// TODO: should this data be stored in the chunkHandler or in the session?
-	chunkHandler.app = commandObject["app"].(string)
-	if _, exists := commandObject["flashVer"]; exists {
-		chunkHandler.flashVer = commandObject["flashVer"].(string)
-	} else if _, exists := commandObject["flashver"]; exists {
-		chunkHandler.flashVer = commandObject["flashver"].(string)
+	chunkHandler.app = metadata["app"].(string)
+	if _, exists := metadata["flashVer"]; exists {
+		chunkHandler.flashVer = metadata["flashVer"].(string)
+	} else if _, exists := metadata["flashver"]; exists {
+		chunkHandler.flashVer = metadata["flashver"].(string)
 	}
-	chunkHandler.swfUrl = commandObject["swfUrl"].(string)
-	chunkHandler.tcUrl = commandObject["tcUrl"].(string)
-	chunkHandler.typeOfStream = commandObject["type"].(string)
 
+	if _, exists := metadata["swfUrl"]; exists {
+		chunkHandler.flashVer = metadata["swfUrl"].(string)
+	} else if _, exists := metadata["swfurl"]; exists {
+		chunkHandler.flashVer = metadata["swfurl"].(string)
+	}
+
+	if _, exists := metadata["tcUrl"]; exists {
+		chunkHandler.flashVer = metadata["tcUrl"].(string)
+	} else if _, exists := metadata["tcurl"]; exists {
+		chunkHandler.flashVer = metadata["tcurl"].(string)
+	}
+
+	if _, exists := metadata["type"]; exists {
+		chunkHandler.flashVer = metadata["type"].(string)
+	}
+}
+
+func (chunkHandler *ChunkHandler) onConnect(csID uint32, transactionID float64, commandObject map[string]interface{}) {
+	fmt.Println("received connect command")
+	chunkHandler.storeMetadata(commandObject)
 	// If the app name to connect  is PublishApp (whatever the user specifies in the config, ie. "app", "app/publish"),
 	// this means the user wants to stream, follow the flow to start a stream
 	// TODO: is this specific for publishing? or does this apply for consuming clients as well?
@@ -652,13 +683,7 @@ func (chunkHandler *ChunkHandler) onPublish(csID uint32, streamID uint32, transa
 	chunkHandler.socket.Flush()
 }
 
-func (chunkHandler *ChunkHandler) handleDataMessage(dataType uint8, messageLength uint32) (*ChunkData, error) {
-	payload := make([]byte, messageLength)
-	_, err := io.ReadAtLeast(chunkHandler.socket, payload, int(messageLength))
-	if err != nil {
-		return nil, err
-	}
-
+func (chunkHandler *ChunkHandler) handleDataMessage(dataType uint8, messageLength uint32, payload []byte) (*ChunkData, error) {
 	switch dataType {
 	case DataMessageAMF0:
 		dataName, err := amf0.Decode(payload) // Decode the command name (always the first string in the payload)

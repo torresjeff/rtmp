@@ -126,7 +126,7 @@ func generateSetChunkSizeMessage(chunkSize uint32) []byte {
 	//setChunkSizeMessage[2] = 0
 	//setChunkSizeMessage[3] = 0
 
-	// the next 3 bytes (4-6) indicate the chunkSize of the body which is 4 bytes. So set it to 4 (the first 2 bytes 4-5 are unused because the number 4 only requires 1 byte to store)
+	// the next 3 bytes (4-6) indicate the inChunkSize of the body which is 4 bytes. So set it to 4 (the first 2 bytes 4-5 are unused because the number 4 only requires 1 byte to store)
 	setChunkSizeMessage[6] = 4
 
 	// Set the type of the message. In our case this is a Window Acknowledgement Size message (5)
