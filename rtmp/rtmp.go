@@ -3,6 +3,7 @@ package rtmp
 import (
 	"fmt"
 	"github.com/torresjeff/rtmp-server/config"
+	"github.com/torresjeff/rtmp-server/rand"
 	"net"
 )
 
@@ -46,8 +47,7 @@ func (server *Server) Run() error {
 		}
 
 		// Create a new session from the new connection (basically a wrapper of the connection + other data)
-		sess := NewSession(&conn, context)
-		// TODO: fill in any other data for the session that is needed
+		sess := NewSession(rand.GenerateSessionId(), &conn, context)
 
 		go func () {
 			err := sess.Run()

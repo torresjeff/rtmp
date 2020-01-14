@@ -57,6 +57,7 @@ type MediaServer interface {
 	onSetDataFrame(metadata map[string]interface{})
 	onFCUnpublish(csID uint32, transactionId float64, args map[string]interface{}, streamKey string)
 	onDeleteStream(csID uint32, transactionId float64, args map[string]interface{}, streamID float64)
+	onCloseStream(csID uint32, transactionId float64, args map[string]interface{})
 }
 
 // Represents a connection made with the RTMP server where messages are exchanged between client/server.
@@ -84,11 +85,9 @@ type Session struct {
 	streamKey    string // used to identify user
 }
 
-type WindowAckSizeCallback func(uint32)
-
-func NewSession(conn *net.Conn, context *Context) *Session {
+func NewSession(sessionID uint32, conn *net.Conn, context *Context) *Session {
 	session := &Session{
-		sessionID: context.GenerateSessionId(),
+		sessionID: sessionID,
 		conn:      *conn,
 		socket:    bufio.NewReadWriter(bufio.NewReaderSize(*conn, config.BuffioSize), bufio.NewWriterSize(*conn, config.BuffioSize)),
 		context:   context,
@@ -104,6 +103,7 @@ func (session *Session) Run() error {
 	// Perform handshake
 	err := session.Handshake()
 	if err != nil {
+		session.context.DestroySession(session.sessionID)
 		session.conn.Close()
 		return err
 	}
@@ -115,9 +115,11 @@ func (session *Session) Run() error {
 	// After handshake, start reading chunks
 	for {
 		if err := session.messageManager.nextMessage(); err == io.EOF {
+			session.context.DestroySession(session.sessionID)
 			session.conn.Close()
 			return nil
 		} else if err != nil {
+			session.context.DestroySession(session.sessionID)
 			return err
 		}
 	}
@@ -233,8 +235,8 @@ func (session *Session) onWindowAckSizeReached(sequenceNumber uint32) {
 
 func (session *Session) onConnect(csID uint32, transactionID float64, data map[string]interface{}) {
 	session.storeMetadata(data)
-	// If the app name to connect is DefaultApp (whatever the user specifies in the config, ie. "app", "app/publish"),
-	if session.app == config.DefaultApp {
+	// If the app name to connect is App (whatever the user specifies in the config, ie. "app", "app/publish"),
+	if session.app == config.App {
 		// Initiate connect sequence
 		// As per the specification, after the connect command, the server sends the protocol message Window Acknowledgment Size
 		session.messageManager.sendWindowAckSize(config.DefaultClientWindowSize)
@@ -425,4 +427,7 @@ func (session *Session) onFCUnpublish(csID uint32, transactionID float64, args m
 
 func (session *Session) onDeleteStream(csID uint32, transactionId float64, args map[string]interface{}, streamID float64) {
 	// streamID is the ID of the stream to destroy on the server
+}
+func (seession *Session) onCloseStream(csID uint32, transactionId float64, args map[string]interface{}) {
+
 }

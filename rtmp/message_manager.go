@@ -172,9 +172,13 @@ func (m *MessageManager) handleCommandAmf0(csID uint32, streamID uint32, command
 	case "FCUnpublish":
 		streamKey, _ := amf0.Decode(payload)
 		m.session.onFCUnpublish(csID, transactionId, commandObject, streamKey.(string))
+	case "closeStream":
+		m.session.onCloseStream(csID, transactionId, commandObject)
 	case "deleteStream":
 		streamID, _ := amf0.Decode(payload)
 		m.session.onDeleteStream(csID, transactionId, commandObject, streamID.(float64))
+	default:
+		fmt.Println("message manager: received command " + commandName + ", but couldn't handle it because no implementation is defined")
 	}
 }
 
