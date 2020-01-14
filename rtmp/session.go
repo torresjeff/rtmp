@@ -3,8 +3,10 @@ package rtmp
 import (
 	"bufio"
 	"fmt"
+	"github.com/torresjeff/rtmp-server/audio"
 	"github.com/torresjeff/rtmp-server/config"
 	"github.com/torresjeff/rtmp-server/rand"
+	"github.com/torresjeff/rtmp-server/video"
 	"io"
 	"net"
 	"strings"
@@ -24,16 +26,18 @@ type surroundSound struct {
 }
 
 type clientMetadata struct {
-	duration float64
-	fileSize float64
-	width           float64
-	height          float64
-	videoCodecID    string
-	videoDataRate   float64
-	frameRate       float64
-	audioCodecID    string
+	duration      float64
+	fileSize      float64
+	width         float64
+	height        float64
+	videoCodecID  string
+	// number representation of videoCodecID (ffmpeg sends audioCodecID as a number rather than a string (like obs))
+	nVideoCodecID float64
+	videoDataRate float64
+	frameRate     float64
+	audioCodecID  string
 	// number representation of audioCodecID (ffmpeg sends audioCodecID as a number rather than a string (like obs))
-	iAudioCodecID    float64
+	nAudioCodecID   float64
 	audioDataRate   float64
 	audioSampleRate float64
 	audioSampleSize float64
@@ -58,6 +62,8 @@ type MediaServer interface {
 	onFCUnpublish(csID uint32, transactionId float64, args map[string]interface{}, streamKey string)
 	onDeleteStream(csID uint32, transactionId float64, args map[string]interface{}, streamID float64)
 	onCloseStream(csID uint32, transactionId float64, args map[string]interface{})
+	onAudioMessage(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, bytes []byte)
+	onVideoMessage(frameType video.FrameType, codec video.Codec, bytes []byte)
 }
 
 // Represents a connection made with the RTMP server where messages are exchanged between client/server.
@@ -318,7 +324,12 @@ func (session *Session) onSetDataFrame(metadata map[string]interface{}) {
 		session.clientMetadata.height = val.(float64)
 	}
 	if val, exists := metadata["videocodecid"]; exists {
-		session.clientMetadata.videoCodecID = val.(string)
+		switch val.(type) {
+		case float64:
+			session.clientMetadata.nVideoCodecID = val.(float64)
+		case string:
+			session.clientMetadata.videoCodecID = val.(string)
+		}
 	}
 	if val, exists := metadata["videodatarate"]; exists {
 		session.clientMetadata.videoDataRate = val.(float64)
@@ -329,7 +340,7 @@ func (session *Session) onSetDataFrame(metadata map[string]interface{}) {
 	if val, exists := metadata["audiocodecid"]; exists {
 		switch val.(type) {
 		case float64:
-			session.clientMetadata.iAudioCodecID = val.(float64)
+			session.clientMetadata.nAudioCodecID = val.(float64)
 		case string:
 			session.clientMetadata.audioCodecID = val.(string)
 		}
@@ -428,6 +439,58 @@ func (session *Session) onFCUnpublish(csID uint32, transactionID float64, args m
 func (session *Session) onDeleteStream(csID uint32, transactionId float64, args map[string]interface{}, streamID float64) {
 	// streamID is the ID of the stream to destroy on the server
 }
-func (seession *Session) onCloseStream(csID uint32, transactionId float64, args map[string]interface{}) {
+func (session *Session) onCloseStream(csID uint32, transactionId float64, args map[string]interface{}) {
 
+}
+
+// If format == audio.AAC, audioData will contain AACPacketType at index 0
+func (session *Session) onAudioMessage(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, audioData []byte) {
+	if config.Debug {
+		switch format {
+		case audio.MP3:
+			fmt.Print("format: mp3")
+		case audio.AAC:
+			fmt.Print("format: aac")
+		}
+		switch sampleRate {
+		case audio.Rate44KHz:
+			fmt.Print(", sample rate: 44Kz")
+		default:
+			fmt.Print(", other sample rate")
+		}
+
+		switch sampleSize {
+		case audio.Size8Bit:
+			fmt.Print(", 8-bit sample size")
+		case audio.Size16Bit:
+			fmt.Print(", 16-bit sample size")
+		}
+
+		switch channels {
+		case audio.Mono:
+			fmt.Print(", mono channels\n")
+		case audio.Stereo:
+			fmt.Print(", stereo channels\n")
+		}
+	}
+
+	// TODO: broadcast the audio message to all playback clients subscribed to this stream
+}
+
+func (s *Session) onVideoMessage(frameType video.FrameType, codec video.Codec, bytes []byte) {
+	if config.Debug {
+		switch frameType {
+		case video.KeyFrame:
+			fmt.Printf("key frame")
+		case video.InterFrame:
+			fmt.Printf("inter frame")
+		}
+
+		switch codec {
+		case video.H264:
+			fmt.Printf(", h264 (avv)\n")
+		case video.H263:
+			fmt.Printf(", h263\n")
+		}
+	}
 }

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/torresjeff/rtmp-server/amf/amf0"
+	"github.com/torresjeff/rtmp-server/audio"
 	"github.com/torresjeff/rtmp-server/config"
+	"github.com/torresjeff/rtmp-server/video"
 )
 
 type MessageManager struct {
@@ -51,9 +53,7 @@ func (m *MessageManager) interpretMessage(header *ChunkHeader, payload []byte) e
 		fmt.Println("message manager: received audio message")
 		return m.handleAudioMessage(header.BasicHeader.ChunkStreamID, header.MessageHeader.MessageStreamID, payload)
 	case VideoMessage:
-		fmt.Println("message manager: received video message")
-		// TODO: implement
-		return nil
+		return m.handleVideoMessage(header.BasicHeader.ChunkStreamID, header.MessageHeader.MessageStreamID, payload)
 	default:
 		return errors.New(fmt.Sprintf("message manager: received unknown message type ID in header, ID (decimal): %d", header.MessageHeader.MessageTypeID))
 	}
@@ -193,7 +193,7 @@ func (m *MessageManager) handleDataMessage(dataType uint8, payload []byte) error
 		return m.handleDataMessageAmf0(dataName.(string), payload[amf0.Size(dataName.(string)):])
 	case DataMessageAMF3:
 		// TODO: implement AMF3
-		fmt.Println("message manager: received AMF3 data message, but couldn't process it because AMF3 encoding/decoding is not implement")
+		fmt.Println("message manager: received AMF3 data message, but couldn't process it because AMF3 encoding/decoding is not implemented")
 	default:
 		return errors.New(fmt.Sprintf("message manager: received unknown data message type, type: %d", dataType))
 	}
@@ -223,7 +223,22 @@ func (m *MessageManager) handleDataMessageAmf0(dataName string, payload []byte) 
 }
 
 func (m *MessageManager) handleAudioMessage(chunkStreamID uint32, messageStreamID uint32, payload []byte) error {
-	// TODO: implement. Forward to playback clients.
+	// Header contains sound format, rate, size, type
+	audioHeader := payload[0]
+	format := audio.Format((audioHeader >> 4) & 0x3F)
+	sampleRate := audio.SampleRate((audioHeader >> 2) & 0x03)
+	sampleSize := audio.SampleSize((audioHeader >> 1) & 1)
+	channels := audio.Channel((audioHeader) & 1)
+	m.session.onAudioMessage(format, sampleRate, sampleSize, channels, payload[1:])
+	return nil
+}
+
+func (m *MessageManager) handleVideoMessage(csID uint32, messageStreamID uint32, payload []byte) error {
+	// Header contains frame type (key frame, i-frame, etc.) and format/codec (H264, etc.)
+	videoHeader := payload[0]
+	frameType := video.FrameType((videoHeader >> 4) & 0x0F)
+	codec := video.Codec(videoHeader & 0x0F)
+	m.session.onVideoMessage(frameType, codec, payload[1:])
 	return nil
 }
 
