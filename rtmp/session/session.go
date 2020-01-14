@@ -42,8 +42,24 @@ type clientMetadata struct {
 	encoder         string
 }
 
+// Media Server interface defines the callbacks that are called when a message is received
+type MediaServer interface {
+	onSetChunkSize(size uint32)
+	onAbortMessage(chunkStreamId uint32)
+	onAck(sequenceNumber uint32)
+	onSetWindowAckSize(windowAckSize uint32)
+	onSetBandwidth(windowAckSize uint32, limitType uint8)
+	onConnect(csID uint32, transactionId float64, data map[string]interface{})
+	onReleaseStream(csID uint32, transactionId float64, streamKey string)
+	onFCPublish(csID uint32, transactionId float64, streamKey string)
+	onCreateStream(csID uint32, transactionId float64, data map[string]interface{})
+	onPublish(csID uint32, streamID uint32, transactionId float64, streamKey string, publishingType string)
+	onSetDataFrame(metadata map[string]interface{})
+}
+
 // Represents a connection made with the RTMP server where messages are exchanged between client/server.
 type Session struct {
+	MediaServer
 	id             uint32
 	conn           net.Conn
 	socket         *bufio.ReadWriter
@@ -211,8 +227,8 @@ func (session *Session) generateS2(s2 []byte) error {
 func (session *Session) onWindowAckSizeReached(sequenceNumber uint32) {
 }
 
-func (session *Session) onConnect(csID uint32, transactionID float64, commandObject map[string]interface{}) {
-	session.storeMetadata(commandObject)
+func (session *Session) onConnect(csID uint32, transactionID float64, data map[string]interface{}) {
+	session.storeMetadata(data)
 	// If the app name to connect  is PublishApp (whatever the user specifies in the config, ie. "app", "app/publish"),
 	// this means the user wants to stream, follow the flow to start a stream
 	if session.app == config.PublishApp {
@@ -278,7 +294,7 @@ func (session *Session) onSetBandwidth(windowAckSize uint32, limitType uint8) {
 	session.messageManager.SetBandwidth(windowAckSize, limitType)
 }
 
-func (session *Session) onSetClientMetadata(metadata map[string]interface{}) {
+func (session *Session) onSetDataFrame(metadata map[string]interface{}) {
 	// Put all keys in lowercase to handle different formats for each client uniformly
 	for key, val := range metadata {
 		metadata[strings.ToLower(key)] = val
@@ -350,9 +366,9 @@ func (session *Session) onSetClientMetadata(metadata map[string]interface{}) {
 		session.clientMetadata.encoder = val.(string)
 	}
 
-	if config.Debug {
-		fmt.Printf("clientMetadata %+v", session.clientMetadata)
-	}
+	//if config.Debug {
+	//	fmt.Printf("clientMetadata %+v", session.clientMetadata)
+	//}
 }
 
 func (session *Session) onReleaseStream(csID uint32, transactionID float64, streamKey string) {
@@ -374,8 +390,9 @@ func (session *Session) sendOnFCPublish(csID uint32, transactionID float64, stre
 	session.socket.Flush()
 }
 
-func (session *Session) onCreateStream(csID uint32, transactionID float64, commandObject map[string]interface{}) {
-	message := generateCreateStreamResponse(csID, transactionID, commandObject)
+func (session *Session) onCreateStream(csID uint32, transactionID float64, data map[string]interface{}) {
+	// data object could be nil
+	message := generateCreateStreamResponse(csID, transactionID, data)
 	session.socket.Write(message)
 	session.socket.Flush()
 

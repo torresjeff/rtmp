@@ -9,11 +9,11 @@ import (
 )
 
 type MessageManager struct {
-	session *Session
+	session MediaServer
 	chunkHandler *ChunkHandler
 }
 
-func NewMessageManager(session *Session, chunkHandler *ChunkHandler) *MessageManager {
+func NewMessageManager(session MediaServer, chunkHandler *ChunkHandler) *MessageManager {
 	return &MessageManager{
 		session: session,
 		chunkHandler: chunkHandler,
@@ -220,9 +220,9 @@ func (m *MessageManager) handleDataMessageAmf0(dataName string, payload []byte) 
 		// Handle cases where the metadata comes as an object or as an ECMAArray
 		switch metadata.(type) {
 		case amf0.ECMAArray:
-			m.session.onSetClientMetadata(metadata.(amf0.ECMAArray))
+			m.session.onSetDataFrame(metadata.(amf0.ECMAArray))
 		case map[string]interface{}:
-			m.session.onSetClientMetadata(metadata.(map[string]interface{}))
+			m.session.onSetDataFrame(metadata.(map[string]interface{}))
 		}
 		return nil
 	default:
