@@ -443,7 +443,8 @@ func (session *Session) onCloseStream(csID uint32, transactionId float64, args m
 
 }
 
-// If format == audio.AAC, audioData will contain AACPacketType at index 0
+// audioData is the full payload (it has the audio headers at the beginning of the payload), for easy forwarding
+// If format == audio.AAC, audioData will contain AACPacketType at index 1
 func (session *Session) onAudioMessage(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, audioData []byte) {
 	if config.Debug {
 		switch format {
@@ -477,7 +478,8 @@ func (session *Session) onAudioMessage(format audio.Format, sampleRate audio.Sam
 	// TODO: broadcast the audio message to all playback clients subscribed to this stream
 }
 
-func (s *Session) onVideoMessage(frameType video.FrameType, codec video.Codec, bytes []byte) {
+// videoData is the full payload (it has the video headers at the beginning of the payload), for easy forwarding
+func (s *Session) onVideoMessage(frameType video.FrameType, codec video.Codec, videoData []byte) {
 	if config.Debug {
 		switch frameType {
 		case video.KeyFrame:
@@ -493,4 +495,6 @@ func (s *Session) onVideoMessage(frameType video.FrameType, codec video.Codec, b
 			fmt.Printf(", h263\n")
 		}
 	}
+
+	// TODO: broadcast the video message to all playback clients subscribed to this stream
 }

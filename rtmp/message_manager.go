@@ -229,7 +229,7 @@ func (m *MessageManager) handleAudioMessage(chunkStreamID uint32, messageStreamI
 	sampleRate := audio.SampleRate((audioHeader >> 2) & 0x03)
 	sampleSize := audio.SampleSize((audioHeader >> 1) & 1)
 	channels := audio.Channel((audioHeader) & 1)
-	m.session.onAudioMessage(format, sampleRate, sampleSize, channels, payload[1:])
+	m.session.onAudioMessage(format, sampleRate, sampleSize, channels, payload)
 	return nil
 }
 
@@ -238,7 +238,7 @@ func (m *MessageManager) handleVideoMessage(csID uint32, messageStreamID uint32,
 	videoHeader := payload[0]
 	frameType := video.FrameType((videoHeader >> 4) & 0x0F)
 	codec := video.Codec(videoHeader & 0x0F)
-	m.session.onVideoMessage(frameType, codec, payload[1:])
+	m.session.onVideoMessage(frameType, codec, payload)
 	return nil
 }
 
