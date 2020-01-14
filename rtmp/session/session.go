@@ -7,31 +7,74 @@ import (
 	"github.com/torresjeff/rtmp-server/utils"
 	"io"
 	"net"
+	"strings"
 )
 
 const RtmpVersion3 = 0x03
 
+
+type surroundSound struct {
+	stereoSound bool
+	twoPointOneSound bool
+	threePointOneSound bool
+	fourPointZeroSound bool
+	fourPointOneSound bool
+	fivePointOneSound bool
+	sevenPointOneSound bool
+}
+
+type clientMetadata struct {
+	duration float64
+	fileSize float64
+	width           float64
+	height          float64
+	videoCodecID    string
+	videoDataRate   float64
+	frameRate       float64
+	audioCodecID    string
+	// number representation of audioCodecID (ffmpeg sends audioCodecID as a number rather than a string (like obs))
+	iAudioCodecID    float64
+	audioDataRate   float64
+	audioSampleRate float64
+	audioSampleSize float64
+	audioChannels   float64
+	sound           surroundSound
+	encoder         string
+}
+
 // Represents a connection made with the RTMP server where messages are exchanged between client/server.
 type Session struct {
-	id     uint32
-	conn   net.Conn
-	socket *bufio.ReadWriter
+	id             uint32
+	conn           net.Conn
+	socket         *bufio.ReadWriter
+	clientMetadata clientMetadata
 
 	//handshakeState HandshakeState
-	c1             []byte
-	s1             []byte
+	c1 []byte
+	s1 []byte
 
-	parser *ChunkHandler
+	// Interprets messages, calling the appropriate callback on the session
+	messageManager *MessageManager
+
+	// app data
+	app                string
+	flashVer           string
+	swfUrl             string
+	tcUrl              string
+	typeOfStream       string
+	streamKey          string // used to identify user
 }
+
+type WindowAckSizeCallback func(uint32)
 
 func NewSession(conn *net.Conn) *Session {
 	session := &Session{
 		id:             GenerateSessionId(),
 		conn:           *conn,
 		socket:         bufio.NewReadWriter(bufio.NewReaderSize(*conn, config.BuffioSize), bufio.NewWriterSize(*conn, config.BuffioSize)),
-		//handshakeState: RtmpHandshakeUninit,
 	}
-	session.parser = NewChunkHandler(session.socket)
+	chunkHandler := NewChunkHandler(session.socket)
+	session.messageManager = NewMessageManager(session, chunkHandler)
 	RegisterSession(session.id, session)
 	return session
 }
@@ -51,9 +94,7 @@ func (session *Session) Run() error {
 
 	// After handshake, start reading chunks
 	for {
-		// This would be readMessage instead, when implementing a client.
-		// readMessage would assemble a message from multiple chunks.
-		if err := session.readChunk(); err == io.EOF {
+		if err := session.messageManager.nextMessage(); err == io.EOF {
 			session.conn.Close()
 			return nil
 		} else if err != nil {
@@ -167,24 +208,193 @@ func (session *Session) generateS2(s2 []byte) error {
 	return nil
 }
 
-func (session *Session) readChunk() error {
-	// TODO: every time a chunk is read, update the number of read bytes
-	var err error
-	chunkHeader, err := session.parser.ReadChunkHeader()
-	if err != nil {
-		return err
+func (session *Session) onWindowAckSizeReached(sequenceNumber uint32) {
+}
+
+func (session *Session) onConnect(csID uint32, transactionID float64, commandObject map[string]interface{}) {
+	session.storeMetadata(commandObject)
+	// If the app name to connect  is PublishApp (whatever the user specifies in the config, ie. "app", "app/publish"),
+	// this means the user wants to stream, follow the flow to start a stream
+	if session.app == config.PublishApp {
+		// Initiate connect sequence
+		// As per the specification, after the connect command, the server sends the protocol message Window Acknowledgment Size
+		session.messageManager.sendWindowAckSize(config.DefaultClientWindowSize)
+		// TODO: connect to the app (whatever that is)
+		// After sending the window ack size message, the server sends the set peer bandwidth message
+		session.messageManager.sendSetPeerBandWidth(config.DefaultClientWindowSize, LimitDynamic)
+		// Send the User Control Message to begin stream with stream ID = DefaultPublishStream (which is 0)
+		// Subsequent messages sent by the client will have stream ID = DefaultPublishStream, until another sendBeginStream message is sent
+		session.messageManager.sendBeginStream(config.DefaultPublishStream)
+		// Send Set Chunk Size message
+		session.messageManager.sendSetChunkSize(config.DefaultChunkSize)
+		// Send Connect Success response
+		session.messageManager.sendConnectSuccess(csID)
+	} else {
+		fmt.Println("session: user trying to connect to app", session.app, ", but the app doesn't exist")
+	}
+}
+
+func (session *Session) storeMetadata(metadata map[string]interface{}) {
+	// Playback clients send other properties in the command object, such as what audio/video codecs the client supports
+	session.app = metadata["app"].(string)
+	if _, exists := metadata["flashVer"]; exists {
+		session.flashVer = metadata["flashVer"].(string)
+	} else if _, exists := metadata["flashver"]; exists {
+		session.flashVer = metadata["flashver"].(string)
 	}
 
-	_, err = session.parser.ReadChunkData(chunkHeader)
-	if err != nil {
-		return err
+	if _, exists := metadata["swfUrl"]; exists {
+		session.flashVer = metadata["swfUrl"].(string)
+	} else if _, exists := metadata["swfurl"]; exists {
+		session.flashVer = metadata["swfurl"].(string)
 	}
-	//if config.Debug{
-	//	fmt.Println("chunkBasicHeader", chunkHeader.BasicHeader)
-	//	fmt.Println("chunkMessageHeader", chunkHeader.MessageHeader)
-	//	fmt.Println("chunkData", chunkData)
-	//}
 
+	if _, exists := metadata["tcUrl"]; exists {
+		session.flashVer = metadata["tcUrl"].(string)
+	} else if _, exists := metadata["tcurl"]; exists {
+		session.flashVer = metadata["tcurl"].(string)
+	}
 
-	return nil
+	if _, exists := metadata["type"]; exists {
+		session.flashVer = metadata["type"].(string)
+	}
+}
+
+func (session *Session) onSetChunkSize(size uint32) {
+	session.messageManager.SetChunkSize(size)
+}
+
+func (session *Session) onAbortMessage(chunkStreamId uint32) {
+}
+
+func (session *Session) onAck(sequenceNumber uint32) {
+}
+
+func (session *Session) onSetWindowAckSize(windowAckSize uint32) {
+	session.messageManager.SetWindowAckSize(windowAckSize)
+}
+
+func (session *Session) onSetBandwidth(windowAckSize uint32, limitType uint8) {
+	session.messageManager.SetBandwidth(windowAckSize, limitType)
+}
+
+func (session *Session) onSetClientMetadata(metadata map[string]interface{}) {
+	// Put all keys in lowercase to handle different formats for each client uniformly
+	for key, val := range metadata {
+		metadata[strings.ToLower(key)] = val
+	}
+
+	if val, exists := metadata["duration"]; exists {
+		session.clientMetadata.duration = val.(float64)
+	}
+	if val, exists := metadata["filesize"]; exists {
+		session.clientMetadata.fileSize = val.(float64)
+	}
+	if val, exists := metadata["width"]; exists {
+		session.clientMetadata.width = val.(float64)
+	}
+	if val, exists := metadata["height"]; exists {
+		session.clientMetadata.height = val.(float64)
+	}
+	if val, exists := metadata["videocodecid"]; exists {
+		session.clientMetadata.videoCodecID = val.(string)
+	}
+	if val, exists := metadata["videodatarate"]; exists {
+		session.clientMetadata.videoDataRate = val.(float64)
+	}
+	if val, exists := metadata["framerate"]; exists {
+		session.clientMetadata.frameRate = val.(float64)
+	}
+	if val, exists := metadata["audiocodecid"]; exists {
+		switch val.(type) {
+		case float64:
+			session.clientMetadata.iAudioCodecID = val.(float64)
+		case string:
+			session.clientMetadata.audioCodecID = val.(string)
+		}
+	}
+	if val, exists := metadata["audiodatarate"]; exists {
+		session.clientMetadata.audioDataRate = val.(float64)
+	}
+	if val, exists := metadata["audiosamplerate"]; exists {
+		session.clientMetadata.audioSampleRate = val.(float64)
+	}
+	if val, exists := metadata["audiosamplesize"]; exists {
+		session.clientMetadata.audioSampleSize = val.(float64)
+	}
+	if val, exists := metadata["audiochannels"]; exists {
+		session.clientMetadata.audioChannels = val.(float64)
+	}
+	if val, exists := metadata["stereo"]; exists {
+		session.clientMetadata.sound.stereoSound = val.(bool)
+	}
+	if val, exists := metadata["2.1"]; exists {
+		session.clientMetadata.sound.twoPointOneSound = val.(bool)
+	}
+	if val, exists := metadata["3.1"]; exists {
+		session.clientMetadata.sound.threePointOneSound = val.(bool)
+	}
+	if val, exists := metadata["4.0"]; exists {
+		session.clientMetadata.sound.fourPointZeroSound = val.(bool)
+	}
+	if val, exists := metadata["4.1"]; exists {
+		session.clientMetadata.sound.fourPointOneSound = val.(bool)
+	}
+	if val, exists := metadata["5.1"]; exists {
+		session.clientMetadata.sound.fivePointOneSound = val.(bool)
+	}
+	if val, exists := metadata["7.1"]; exists {
+		session.clientMetadata.sound.sevenPointOneSound = val.(bool)
+	}
+	if val, exists := metadata["encoder"]; exists {
+		session.clientMetadata.encoder = val.(string)
+	}
+
+	if config.Debug {
+		fmt.Printf("clientMetadata %+v", session.clientMetadata)
+	}
+}
+
+func (session *Session) onReleaseStream(csID uint32, transactionID float64, streamKey string) {
+	// TODO: what does releaseStream actually do? Does it close the stream?
+	// TODO: check stuff like is stream key valid, is the user allowed to release the stream
+
+	// TODO: implement
+}
+
+func (session *Session) onFCPublish(csID uint32, transactionID float64, streamKey string) {
+	// TODO: check stuff like is stream key valid, is the user allowed to publish to the stream
+
+	session.sendOnFCPublish(csID, transactionID, streamKey)
+}
+
+func (session *Session) sendOnFCPublish(csID uint32, transactionID float64, streamKey string) {
+	message := generateOnFCPublishMessage(csID, transactionID, streamKey)
+	session.socket.Write(message)
+	session.socket.Flush()
+}
+
+func (session *Session) onCreateStream(csID uint32, transactionID float64, commandObject map[string]interface{}) {
+	message := generateCreateStreamResponse(csID, transactionID, commandObject)
+	session.socket.Write(message)
+	session.socket.Flush()
+
+	session.messageManager.sendBeginStream(uint32(config.DefaultStreamID))
+}
+
+func (session *Session) onPublish(csID uint32, streamID uint32, transactionID float64, streamKey string, publishingType string) {
+	// TODO: Handle things like look up the user's stream key, check if it's valid.
+	// TODO: For example: twitch returns "Publishing live_user_<username>" in the description.
+	// TODO: Handle things like recording into a file if publishingType = "record" or "append"
+	// infoObject should have at least three properties: level, code, and description. But may contain other properties.
+	infoObject := map[string]interface{}{
+		"level": "status",
+		"code": "NetStream.Publish.Start",
+		"description": "Publishing live_user_<x>",
+	}
+	// TODO: the transaction ID for onStatus messages should be 0 as per the spec. But twitch sends the transaction ID that was in the request to "publish".
+	// For now, reply with the same transaction ID.
+	message := generateStatusMessage(transactionID, streamID, infoObject)
+	session.socket.Write(message)
+	session.socket.Flush()
 }

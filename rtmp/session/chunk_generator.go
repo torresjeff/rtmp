@@ -326,3 +326,27 @@ func generateStatusMessage(transactionID float64, streamID uint32, infoObject ma
 
 	return createStreamResponseMessage
 }
+
+func generateAckMessage(sequenceNumber uint32) []byte {
+	setChunkSizeMessage := make([]byte, 16)
+	//---- HEADER ----//
+	// fmt = 0 and csid = 2 encoded in 1 byte
+	// Chunk Stream ID with value 2 is reserved for low-level protocol control messages and commands.
+	setChunkSizeMessage[0] = 2
+	// timestamp (3 bytes) is set to 0 so bytes 1-3 are unmodified (they're already zero-initialized)
+
+	// the next 3 bytes (4-6) indicate the size of the body which is 4 bytes. So set it to 4 (the first 2 bytes 4-5 are unused because the number 4 only requires 1 byte to store)
+	setChunkSizeMessage[6] = 4
+
+	// Set the type of the message. In our case this is an Acknowledgement message (3)
+	setChunkSizeMessage[7] = Ack
+
+	// The next 4 bytes indicate the Message Stream ID. Protocol Control Messages, such as Window Acknowledgement Size, always use the message stream ID 0. So leave them at 0
+	// (they're already zero initialized)
+
+	//---- BODY ----//
+	// Finally, store the actual sequence number (number of bytes received so far) in the last 4 bytes
+	binary.BigEndian.PutUint32(setChunkSizeMessage[12:], sequenceNumber)
+
+	return setChunkSizeMessage
+}
