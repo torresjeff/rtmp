@@ -3,7 +3,7 @@ package config
 var Debug = true
 const BuffioSize = 1024*64
 
-const PublishApp = "app"
+const DefaultApp = "app"
 const DefaultClientWindowSize uint32 = 2500000
 const DefaultPublishStream uint32 = 0
 const DefaultChunkSize uint32 = 4096

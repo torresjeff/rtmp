@@ -126,58 +126,38 @@ func (m *MessageManager) handleCommandAmf0(csID uint32, streamID uint32, command
 	if config.Debug {
 		fmt.Println("received command", commandName)
 	}
+	// Every command has a transaction ID and a command object (which can be null)
+	tId, _ := amf0.Decode(payload)
+	byteLength := amf0.Size(tId)
+	transactionId := tId.(float64)
+	// Update our payload to read the next property (commandObject)
+	payload = payload[byteLength:]
+	cmdObject, _ := amf0.Decode(payload)
+	var commandObject map[string]interface{}
+	switch cmdObject.(type) {
+	case nil:
+		commandObject = nil
+	case map[string]interface{}:
+		commandObject = cmdObject.(map[string]interface{})
+	case amf0.ECMAArray:
+		commandObject = cmdObject.(amf0.ECMAArray)
+	}
+	// Update our payload to read the next property
+	byteLength = amf0.Size(cmdObject)
+	payload = payload[byteLength:]
+
 	switch commandName {
 	case "connect":
-		transactionId, _ := amf0.Decode(payload)
-		byteLength := amf0.Size(transactionId)
-		// Update our payload to read the next property (commandObject)
-		payload = payload[byteLength:]
-		commandObject, _ := amf0.Decode(payload)
-		m.session.onConnect(csID, transactionId.(float64), commandObject.(map[string]interface{}))
+		m.session.onConnect(csID, transactionId, commandObject)
 	case "releaseStream":
-		transactionId, _ := amf0.Decode(payload)
-		// Update our payload to read the next property (NULL)
-		byteLength := amf0.Size(transactionId)
-		payload = payload[byteLength:]
-		null, _ := amf0.Decode(payload)
-		// Update our payload to read the next property (stream key)
-		byteLength = amf0.Size(null)
-		payload = payload[byteLength:]
 		streamKey, _ := amf0.Decode(payload)
-		m.session.onReleaseStream(csID, transactionId.(float64), streamKey.(string))
+		m.session.onReleaseStream(csID, transactionId, commandObject, streamKey.(string))
 	case "FCPublish":
-		transactionId, _ := amf0.Decode(payload)
-		// Update our payload to read the next property (NULL)
-		byteLength := amf0.Size(transactionId)
-		payload = payload[byteLength:]
-		null, _ := amf0.Decode(payload)
-		// Update our payload to read the next property (stream key)
-		byteLength = amf0.Size(null)
-		payload = payload[byteLength:]
 		streamKey, _ := amf0.Decode(payload)
-		m.session.onFCPublish(csID, transactionId.(float64), streamKey.(string))
+		m.session.onFCPublish(csID, transactionId, commandObject, streamKey.(string))
 	case "createStream":
-		transactionId, _ := amf0.Decode(payload)
-		byteLength := amf0.Size(transactionId)
-		// Update our payload to read the next property (commandObject)
-		payload = payload[byteLength:]
-		commandObject, _ := amf0.Decode(payload)
-		// Handle cases where the command object that was sent is null
-		switch commandObject.(type) {
-		case nil:
-			m.session.onCreateStream(csID, transactionId.(float64), nil)
-		default:
-			m.session.onCreateStream(csID, transactionId.(float64), commandObject.(map[string]interface{}))
-		}
+		m.session.onCreateStream(csID, transactionId, commandObject)
 	case "publish":
-		transactionId, _ := amf0.Decode(payload)
-		byteLength := amf0.Size(transactionId)
-		// Update our payload to read the next property (commandObject)
-		payload = payload[byteLength:]
-		// Command object is set to null for the publish command
-		commandObject, _ := amf0.Decode(payload)
-		byteLength = amf0.Size(commandObject)
-		payload = payload[byteLength:]
 		// name with which the stream is published (basically the streamKey)
 		streamKey, _ := amf0.Decode(payload)
 		byteLength = amf0.Size(streamKey)
@@ -188,7 +168,13 @@ func (m *MessageManager) handleCommandAmf0(csID uint32, streamID uint32, command
 		// - append: The stream is published and the data is appended to a file. If no file is found, it is created.
 		// - live: Live data is published without recording it in a file.
 		publishingType, _ := amf0.Decode(payload)
-		m.session.onPublish(csID, streamID, transactionId.(float64), streamKey.(string), publishingType.(string))
+		m.session.onPublish(csID, streamID, transactionId, commandObject, streamKey.(string), publishingType.(string))
+	case "FCUnpublish":
+		streamKey, _ := amf0.Decode(payload)
+		m.session.onFCUnpublish(csID, transactionId, commandObject, streamKey.(string))
+	case "deleteStream":
+		streamID, _ := amf0.Decode(payload)
+		m.session.onDeleteStream(csID, transactionId, commandObject, streamID.(float64))
 	}
 }
 

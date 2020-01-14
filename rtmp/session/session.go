@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"github.com/torresjeff/rtmp-server/config"
-	"github.com/torresjeff/rtmp-server/utils"
+	"github.com/torresjeff/rtmp-server/rand"
 	"io"
 	"net"
 	"strings"
@@ -50,11 +50,13 @@ type MediaServer interface {
 	onSetWindowAckSize(windowAckSize uint32)
 	onSetBandwidth(windowAckSize uint32, limitType uint8)
 	onConnect(csID uint32, transactionId float64, data map[string]interface{})
-	onReleaseStream(csID uint32, transactionId float64, streamKey string)
-	onFCPublish(csID uint32, transactionId float64, streamKey string)
+	onReleaseStream(csID uint32, transactionId float64, args map[string]interface{}, streamKey string)
+	onFCPublish(csID uint32, transactionId float64, args map[string]interface{}, streamKey string)
 	onCreateStream(csID uint32, transactionId float64, data map[string]interface{})
-	onPublish(csID uint32, streamID uint32, transactionId float64, streamKey string, publishingType string)
+	onPublish(csID uint32, streamID uint32, transactionId float64, args map[string]interface{}, streamKey string, publishingType string)
 	onSetDataFrame(metadata map[string]interface{})
+	onFCUnpublish(csID uint32, transactionId float64, args map[string]interface{}, streamKey string)
+	onDeleteStream(csID uint32, transactionId float64, args map[string]interface{}, streamID float64)
 }
 
 // Represents a connection made with the RTMP server where messages are exchanged between client/server.
@@ -209,7 +211,7 @@ func (session *Session) sendS0S1S2() error {
 // Generates an S1 message and stores it in s1
 func (session *Session) generateS1(s1 []byte) error {
 	// the s1 byte array is zero-initialized, since we didn't modify it, we're sending our time as 0
-	err := utils.GenerateRandomDataFromBuffer(s1[8:])
+	err := rand.GenerateRandomDataFromBuffer(s1[8:])
 	if err != nil {
 		return err
 	}
@@ -229,9 +231,8 @@ func (session *Session) onWindowAckSizeReached(sequenceNumber uint32) {
 
 func (session *Session) onConnect(csID uint32, transactionID float64, data map[string]interface{}) {
 	session.storeMetadata(data)
-	// If the app name to connect  is PublishApp (whatever the user specifies in the config, ie. "app", "app/publish"),
-	// this means the user wants to stream, follow the flow to start a stream
-	if session.app == config.PublishApp {
+	// If the app name to connect is DefaultApp (whatever the user specifies in the config, ie. "app", "app/publish"),
+	if session.app == config.DefaultApp {
 		// Initiate connect sequence
 		// As per the specification, after the connect command, the server sends the protocol message Window Acknowledgment Size
 		session.messageManager.sendWindowAckSize(config.DefaultClientWindowSize)
@@ -371,14 +372,14 @@ func (session *Session) onSetDataFrame(metadata map[string]interface{}) {
 	//}
 }
 
-func (session *Session) onReleaseStream(csID uint32, transactionID float64, streamKey string) {
+func (session *Session) onReleaseStream(csID uint32, transactionID float64, args map[string]interface{}, streamKey string) {
 	// TODO: what does releaseStream actually do? Does it close the stream?
 	// TODO: check stuff like is stream key valid, is the user allowed to release the stream
 
 	// TODO: implement
 }
 
-func (session *Session) onFCPublish(csID uint32, transactionID float64, streamKey string) {
+func (session *Session) onFCPublish(csID uint32, transactionID float64, args map[string]interface{}, streamKey string) {
 	// TODO: check stuff like is stream key valid, is the user allowed to publish to the stream
 
 	session.sendOnFCPublish(csID, transactionID, streamKey)
@@ -399,7 +400,7 @@ func (session *Session) onCreateStream(csID uint32, transactionID float64, data 
 	session.messageManager.sendBeginStream(uint32(config.DefaultStreamID))
 }
 
-func (session *Session) onPublish(csID uint32, streamID uint32, transactionID float64, streamKey string, publishingType string) {
+func (session *Session) onPublish(csID uint32, streamID uint32, transactionID float64, args map[string]interface{}, streamKey string, publishingType string) {
 	// TODO: Handle things like look up the user's stream key, check if it's valid.
 	// TODO: For example: twitch returns "Publishing live_user_<username>" in the description.
 	// TODO: Handle things like recording into a file if publishingType = "record" or "append"
@@ -414,4 +415,11 @@ func (session *Session) onPublish(csID uint32, streamID uint32, transactionID fl
 	message := generateStatusMessage(transactionID, streamID, infoObject)
 	session.socket.Write(message)
 	session.socket.Flush()
+}
+
+func (session *Session) onFCUnpublish(csID uint32, transactionID float64, args map[string]interface{}, streamKey string) {
+}
+
+func (session *Session) onDeleteStream(csID uint32, transactionId float64, args map[string]interface{}, streamID float64) {
+	// streamID is the ID of the stream to destroy on the server
 }
