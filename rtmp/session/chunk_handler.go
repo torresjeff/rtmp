@@ -8,6 +8,7 @@ import (
 	"github.com/torresjeff/rtmp-server/amf/amf0"
 	"github.com/torresjeff/rtmp-server/config"
 	"io"
+	"strings"
 )
 
 // Chunk types
@@ -66,18 +67,20 @@ type surroundSound struct {
 type clientMetadata struct {
 	duration float64
 	fileSize float64
-	width float64
-	height float64
-	videoCodecID string
-	videoDataRate float64
-	frameRate float64
-	audioCodecID string
-	audioDataRate float64
+	width           float64
+	height          float64
+	videoCodecID    string
+	videoDataRate   float64
+	frameRate       float64
+	audioCodecID    string
+	// number representation of audioCodecID (ffmpeg sends audioCodecID as a number rather than a string (like obs))
+	iAudioCodecID    float64
+	audioDataRate   float64
 	audioSampleRate float64
 	audioSampleSize float64
-	audioChannels float64
-	surroundSound surroundSound
-	encoder string
+	audioChannels   float64
+	sound           surroundSound
+	encoder         string
 }
 
 type ChunkHandler struct {
@@ -138,7 +141,6 @@ func NewChunkHandler(reader *bufio.ReadWriter) *ChunkHandler {
 }
 
 func (chunkHandler *ChunkHandler) ReadChunkHeader() (*ChunkHeader, error) {
-	fmt.Println("reading chunk header")
 	ch := &ChunkHeader{}
 	var err error
 	if err = chunkHandler.readBasicHeader(ch); err != nil {
@@ -223,13 +225,14 @@ func (chunkHandler *ChunkHandler) ReadChunkData(header *ChunkHeader) (*ChunkData
 	case UserControlMessage:
 		return chunkHandler.handleUserControlMessage(header, payload)
 	case CommandMessageAMF0, CommandMessageAMF3:
-		fmt.Println("received command message")
-		return chunkHandler.handleCommandMessage(header.BasicHeader.ChunkStreamID, header.MessageHeader.MessageStreamID, header.MessageHeader.MessageTypeID, header.MessageHeader.MessageLength, payload)
+		return chunkHandler.handleCommandMessage(header.BasicHeader.ChunkStreamID, header.MessageHeader.MessageStreamID, header.MessageHeader.MessageTypeID, payload)
 	case DataMessageAMF0, DataMessageAMF3:
-		return chunkHandler.handleDataMessage(header.MessageHeader.MessageTypeID, header.MessageHeader.MessageLength, payload)
-	case AudioMessage, VideoMessage:
-		// TODO: handle audio and video messages. For now just read the payload and continue
-
+		return chunkHandler.handleDataMessage(header.MessageHeader.MessageTypeID, payload)
+	case AudioMessage:
+		fmt.Println("received audio message")
+		return chunkHandler.handleAudioMessage(header.BasicHeader.ChunkStreamID, header.MessageHeader.MessageStreamID, payload)
+	case VideoMessage:
+		fmt.Println("received video message")
 	default:
 		fmt.Println("received unknown message header")
 	}
@@ -249,8 +252,6 @@ func (chunkHandler *ChunkHandler) readBasicHeader(header *ChunkHeader) error {
 	// Get the chunk stream ID (first 6 bits, bits 0-5). 0x3F == 0011 1111 in binary (our bit mask to extract the lowest 6 bits)
 	csid := b & uint8(0x3F)
 
-	chunkHandler.updateBytesReceived(1)
-
 	if csid == 0 {
 		// if csid is 0, that means we're dealing with chunk basic header 2 (uses 2 bytes)
 		id, err := chunkHandler.socket.ReadByte()
@@ -258,7 +259,6 @@ func (chunkHandler *ChunkHandler) readBasicHeader(header *ChunkHeader) error {
 			return err
 		}
 		basicHeader.ChunkStreamID = uint32(id) + 64
-		chunkHandler.updateBytesReceived(uint32(1))
 	} else if csid == 1 {
 		// if csid is 1, that means we're dealing with chunk basic header 3 (uses 3 bytes).
 		id := make([]byte, 2)
@@ -281,9 +281,6 @@ func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) error {
 	mh := &ChunkMessageHeader{}
 	switch header.BasicHeader.FMT {
 	case ChunkType0:
-		if config.Debug {
-			fmt.Println("chunk type 0 detected")
-		}
 		messageHeader := make([]byte, 11)
 		// A chunk of type 0 has a message header size of 11 bytes, so read 11 bytes into our messageHeader buffer
 		_, err := io.ReadAtLeast(chunkHandler.socket, messageHeader, 11)
@@ -301,12 +298,8 @@ func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) error {
 		mh.MessageStreamID = binary.LittleEndian.Uint32(messageHeader[7:])
 
 		header.MessageHeader = mh
-
 		return nil
 	case ChunkType1:
-		if config.Debug {
-			fmt.Println("chunk type 1 detected")
-		}
 		messageHeader := make([]byte, 7)
 		// A chunk of type 1 has a message header size of 7 bytes, so read 7 bytes into our messageHeader buffer
 		_, err := io.ReadAtLeast(chunkHandler.socket, messageHeader, 7)
@@ -326,9 +319,6 @@ func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) error {
 		header.MessageHeader = mh
 		return nil
 	case ChunkType2:
-		if config.Debug {
-			fmt.Println("chunk type 2 detected")
-		}
 		messageHeader := make([]byte, 3)
 		// A chunk of type 1 has a message header size of 3 bytes, so read 3 bytes into our messageHeader buffer
 		_, err := io.ReadAtLeast(chunkHandler.socket, messageHeader, 3)
@@ -348,9 +338,6 @@ func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) error {
 		header.MessageHeader = mh
 		return nil
 	case ChunkType3:
-		if config.Debug {
-			fmt.Println("chunk type 3 detected")
-		}
 		// Chunk type 3 message headers don't have any data. All values are taken from the previous header.
 
 		// As per the spec: If a Type 3 chunk follows a Type 0 chunk, then the timestamp delta for this Type 3 chunk is the same as the timestamp of the Type 0 chunk.
@@ -450,13 +437,7 @@ func (chunkHandler *ChunkHandler) updateBytesReceived(i uint32) {
 	}
 }
 
-func (chunkHandler *ChunkHandler) handleCommandMessage(csID uint32, streamID uint32, commandType uint8, messageLength uint32, payload []byte) (*ChunkData, error) {
-	//payload := make([]byte, messageLength)
-	//_, err := io.ReadAtLeast(chunkHandler.socket, payload, int(messageLength))
-	//if err != nil {
-	//	return nil, err
-	//}
-
+func (chunkHandler *ChunkHandler) handleCommandMessage(csID uint32, streamID uint32, commandType uint8, payload []byte) (*ChunkData, error) {
 	switch commandType {
 	case CommandMessageAMF0:
 		commandName, err := amf0.Decode(payload) // Decode the command name (always the first string in the payload)
@@ -476,6 +457,9 @@ func (chunkHandler *ChunkHandler) handleCommandMessage(csID uint32, streamID uin
 }
 
 func (chunkHandler *ChunkHandler) handleCommandAmf0(csID uint32, streamID uint32, commandName string, payload []byte) {
+	if config.Debug {
+		fmt.Println("received command", commandName)
+	}
 	switch commandName {
 	case "connect":
 		transactionId, _ := amf0.Decode(payload)
@@ -483,10 +467,6 @@ func (chunkHandler *ChunkHandler) handleCommandAmf0(csID uint32, streamID uint32
 		// Update our payload to read the next property (commandObject)
 		payload = payload[byteLength:]
 		commandObject, _ := amf0.Decode(payload)
-		if config.Debug {
-			fmt.Println(fmt.Sprintf("received command connect with transactionId %f", transactionId.(float64)))
-			fmt.Println(fmt.Sprintf("received command connect with commandObject %+v", commandObject))
-		}
 		chunkHandler.onConnect(csID, transactionId.(float64), commandObject.(map[string]interface{}))
 	case "releaseStream":
 		transactionId, _ := amf0.Decode(payload)
@@ -516,10 +496,6 @@ func (chunkHandler *ChunkHandler) handleCommandAmf0(csID uint32, streamID uint32
 		// Update our payload to read the next property (commandObject)
 		payload = payload[byteLength:]
 		commandObject, _ := amf0.Decode(payload)
-		if config.Debug {
-			fmt.Println(fmt.Sprintf("received command createStream with transactionId %f", transactionId.(float64)))
-			fmt.Println(fmt.Sprintf("received command createStream with commandObject %+v", commandObject))
-		}
 		// Handle cases where the command object that was sent was null
 		switch commandObject.(type) {
 		case nil:
@@ -616,7 +592,6 @@ func (chunkHandler *ChunkHandler) storeMetadata(metadata map[string]interface{})
 }
 
 func (chunkHandler *ChunkHandler) onConnect(csID uint32, transactionID float64, commandObject map[string]interface{}) {
-	fmt.Println("received connect command")
 	chunkHandler.storeMetadata(commandObject)
 	// If the app name to connect  is PublishApp (whatever the user specifies in the config, ie. "app", "app/publish"),
 	// this means the user wants to stream, follow the flow to start a stream
@@ -683,7 +658,7 @@ func (chunkHandler *ChunkHandler) onPublish(csID uint32, streamID uint32, transa
 	chunkHandler.socket.Flush()
 }
 
-func (chunkHandler *ChunkHandler) handleDataMessage(dataType uint8, messageLength uint32, payload []byte) (*ChunkData, error) {
+func (chunkHandler *ChunkHandler) handleDataMessage(dataType uint8, payload []byte) (*ChunkData, error) {
 	switch dataType {
 	case DataMessageAMF0:
 		dataName, err := amf0.Decode(payload) // Decode the command name (always the first string in the payload)
@@ -710,16 +685,25 @@ func (chunkHandler *ChunkHandler) handleDataMessageAmf0(dataName string, payload
 		payload = payload[amf0.Size(onMetadata):]
 		// Metadata is sent as an ECMAArray
 		metadata, _ := amf0.Decode(payload)
-		chunkHandler.setClientMetadata(metadata.(amf0.ECMAArray))
-		fmt.Printf("clientMetadata %+v", chunkHandler.clientMetadata)
+		switch metadata.(type) {
+		case amf0.ECMAArray:
+			chunkHandler.setClientMetadata(metadata.(amf0.ECMAArray))
+		case map[string]interface{}:
+			chunkHandler.setClientMetadata(metadata.(map[string]interface{}))
+		}
 	}
 }
 
-func (chunkHandler *ChunkHandler) setClientMetadata(obj amf0.ECMAArray) {
+func (chunkHandler *ChunkHandler) setClientMetadata(obj map[string]interface{}) {
+	// Put all keys in lowercase to handle different formats for each client uniformly
+	for key, val := range obj {
+		obj[strings.ToLower(key)] = val
+	}
+
 	if val, exists := obj["duration"]; exists {
 		chunkHandler.clientMetadata.duration = val.(float64)
 	}
-	if val, exists := obj["fileSize"]; exists {
+	if val, exists := obj["filesize"]; exists {
 		chunkHandler.clientMetadata.fileSize = val.(float64)
 	}
 	if val, exists := obj["width"]; exists {
@@ -738,7 +722,12 @@ func (chunkHandler *ChunkHandler) setClientMetadata(obj amf0.ECMAArray) {
 		chunkHandler.clientMetadata.frameRate = val.(float64)
 	}
 	if val, exists := obj["audiocodecid"]; exists {
-		chunkHandler.clientMetadata.audioCodecID = val.(string)
+		switch val.(type) {
+		case float64:
+			chunkHandler.clientMetadata.iAudioCodecID = val.(float64)
+		case string:
+			chunkHandler.clientMetadata.audioCodecID = val.(string)
+		}
 	}
 	if val, exists := obj["audiodatarate"]; exists {
 		chunkHandler.clientMetadata.audioDataRate = val.(float64)
@@ -753,28 +742,36 @@ func (chunkHandler *ChunkHandler) setClientMetadata(obj amf0.ECMAArray) {
 		chunkHandler.clientMetadata.audioChannels = val.(float64)
 	}
 	if val, exists := obj["stereo"]; exists {
-		chunkHandler.clientMetadata.surroundSound.stereoSound = val.(bool)
+		chunkHandler.clientMetadata.sound.stereoSound = val.(bool)
 	}
 	if val, exists := obj["2.1"]; exists {
-		chunkHandler.clientMetadata.surroundSound.twoPointOneSound = val.(bool)
+		chunkHandler.clientMetadata.sound.twoPointOneSound = val.(bool)
 	}
 	if val, exists := obj["3.1"]; exists {
-		chunkHandler.clientMetadata.surroundSound.threePointOneSound = val.(bool)
+		chunkHandler.clientMetadata.sound.threePointOneSound = val.(bool)
 	}
 	if val, exists := obj["4.0"]; exists {
-		chunkHandler.clientMetadata.surroundSound.fourPointZeroSound = val.(bool)
+		chunkHandler.clientMetadata.sound.fourPointZeroSound = val.(bool)
 	}
 	if val, exists := obj["4.1"]; exists {
-		chunkHandler.clientMetadata.surroundSound.fourPointOneSound = val.(bool)
+		chunkHandler.clientMetadata.sound.fourPointOneSound = val.(bool)
 	}
 	if val, exists := obj["5.1"]; exists {
-		chunkHandler.clientMetadata.surroundSound.fivePointOneSound = val.(bool)
+		chunkHandler.clientMetadata.sound.fivePointOneSound = val.(bool)
 	}
 	if val, exists := obj["7.1"]; exists {
-		chunkHandler.clientMetadata.surroundSound.sevenPointOneSound = val.(bool)
+		chunkHandler.clientMetadata.sound.sevenPointOneSound = val.(bool)
 	}
 	if val, exists := obj["encoder"]; exists {
 		chunkHandler.clientMetadata.encoder = val.(string)
 	}
 
+	if config.Debug {
+		fmt.Printf("clientMetadata %+v", chunkHandler.clientMetadata)
+	}
+
+}
+
+func (chunkHandler *ChunkHandler) handleAudioMessage(chunkStreamID uint32, messageStreamID uint32, payload []byte) (*ChunkData, error) {
+	return nil, nil
 }
