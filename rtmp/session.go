@@ -1,4 +1,4 @@
-package session
+package rtmp
 
 import (
 	"bufio"
@@ -62,10 +62,11 @@ type MediaServer interface {
 // Represents a connection made with the RTMP server where messages are exchanged between client/server.
 type Session struct {
 	MediaServer
-	id             uint32
+	sessionID      uint32
 	conn           net.Conn
 	socket         *bufio.ReadWriter
 	clientMetadata clientMetadata
+	context        *Context // Stores session data
 
 	//handshakeState HandshakeState
 	c1 []byte
@@ -75,25 +76,26 @@ type Session struct {
 	messageManager *MessageManager
 
 	// app data
-	app                string
-	flashVer           string
-	swfUrl             string
-	tcUrl              string
-	typeOfStream       string
-	streamKey          string // used to identify user
+	app          string
+	flashVer     string
+	swfUrl       string
+	tcUrl        string
+	typeOfStream string
+	streamKey    string // used to identify user
 }
 
 type WindowAckSizeCallback func(uint32)
 
-func NewSession(conn *net.Conn) *Session {
+func NewSession(conn *net.Conn, context *Context) *Session {
 	session := &Session{
-		id:             GenerateSessionId(),
-		conn:           *conn,
-		socket:         bufio.NewReadWriter(bufio.NewReaderSize(*conn, config.BuffioSize), bufio.NewWriterSize(*conn, config.BuffioSize)),
+		sessionID: context.GenerateSessionId(),
+		conn:      *conn,
+		socket:    bufio.NewReadWriter(bufio.NewReaderSize(*conn, config.BuffioSize), bufio.NewWriterSize(*conn, config.BuffioSize)),
+		context:   context,
 	}
 	chunkHandler := NewChunkHandler(session.socket)
 	session.messageManager = NewMessageManager(session, chunkHandler)
-	RegisterSession(session.id, session)
+	context.RegisterSession(session.sessionID, session)
 	return session
 }
 
@@ -137,7 +139,7 @@ func (session *Session) Handshake() error {
 }
 
 func (session *Session) GetID() uint32 {
-	return session.id
+	return session.sessionID
 }
 
 func (session *Session) send(bytes []byte) error {
@@ -418,6 +420,7 @@ func (session *Session) onPublish(csID uint32, streamID uint32, transactionID fl
 }
 
 func (session *Session) onFCUnpublish(csID uint32, transactionID float64, args map[string]interface{}, streamKey string) {
+	session.context.DestroySession(session.sessionID)
 }
 
 func (session *Session) onDeleteStream(csID uint32, transactionId float64, args map[string]interface{}, streamID float64) {

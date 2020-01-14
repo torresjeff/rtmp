@@ -1,4 +1,4 @@
-package session
+package rtmp
 
 import (
 	"bufio"
@@ -246,7 +246,7 @@ func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) error {
 		mh.MessageLength = binary.BigEndian.Uint32(append([]byte{0x00}, messageHeader[3:6]...))
 		// Message type ID is only 1 byte, so read the byte directly
 		mh.MessageTypeID = uint8(messageHeader[6])
-		// Finally, read the message stream id (remaining 4 bytes)
+		// Finally, read the message stream sessionID (remaining 4 bytes)
 		// NOTE: message stream ID is stored in little endian format
 		mh.MessageStreamID = binary.LittleEndian.Uint32(messageHeader[7:])
 

@@ -1,4 +1,4 @@
-package session
+package rtmp
 
 import (
 	"encoding/binary"
@@ -9,7 +9,7 @@ import (
 )
 
 type MessageManager struct {
-	session MediaServer
+	session      MediaServer
 	chunkHandler *ChunkHandler
 }
 

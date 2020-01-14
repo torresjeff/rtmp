@@ -3,7 +3,6 @@ package rtmp
 import (
 	"fmt"
 	"github.com/torresjeff/rtmp-server/config"
-	"github.com/torresjeff/rtmp-server/rtmp/session"
 	"net"
 )
 
@@ -33,6 +32,8 @@ func (server *Server) Run() error {
 		fmt.Println("rtmp: server: listening on", server.Addr)
 	}
 
+	context := NewContext()
+
 	// Loop infinitely, accepting any incoming connection. Every new connection will create a new session.
 	for {
 		conn, err := listener.Accept()
@@ -45,7 +46,7 @@ func (server *Server) Run() error {
 		}
 
 		// Create a new session from the new connection (basically a wrapper of the connection + other data)
-		sess := session.NewSession(&conn)
+		sess := NewSession(&conn, context)
 		// TODO: fill in any other data for the session that is needed
 
 		go func () {
