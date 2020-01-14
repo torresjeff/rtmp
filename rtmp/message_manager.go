@@ -193,7 +193,9 @@ func (m *MessageManager) handleDataMessage(dataType uint8, payload []byte) error
 		return m.handleDataMessageAmf0(dataName.(string), payload[amf0.Size(dataName.(string)):])
 	case DataMessageAMF3:
 		// TODO: implement AMF3
-		fmt.Println("received AMF3 data message, but couldn't process it because AMF3 encoding/decoding is not implement")
+		fmt.Println("message manager: received AMF3 data message, but couldn't process it because AMF3 encoding/decoding is not implement")
+	default:
+		return errors.New(fmt.Sprintf("message manager: received unknown data message type, type: %d", dataType))
 	}
 	return nil
 }
