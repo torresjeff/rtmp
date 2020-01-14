@@ -2,6 +2,7 @@ package rtmp
 
 import (
 	"encoding/binary"
+	"fmt"
 	"github.com/torresjeff/rtmp-server/amf/amf0"
 	"github.com/torresjeff/rtmp-server/config"
 )
@@ -288,6 +289,7 @@ func generateCreateStreamResponse(csID uint32, transactionID float64, commandObj
 }
 
 func generateStatusMessage(transactionID float64, streamID uint32, infoObject map[string]interface{}) []byte {
+
 	commandName, _ := amf0.Encode("onStatus")
 	tID, _ := amf0.Encode(transactionID)
 	// Status messages don't have a command object, so encode nil
@@ -311,12 +313,9 @@ func generateStatusMessage(transactionID float64, streamID uint32, infoObject ma
 	createStreamResponseMessage[7] = CommandMessageAMF0
 
 	// Set stream ID to whatever stream ID the request had (bytes 8-11)
-	createStreamResponseMessage[8] = byte((streamID >> 24) & 0xFF)
-	createStreamResponseMessage[9] = byte((streamID >> 16) & 0xFF)
-	createStreamResponseMessage[10] = byte((streamID >> 8) & 0xFF)
-	createStreamResponseMessage[11] = byte(streamID)
+	binary.LittleEndian.PutUint32(createStreamResponseMessage[8:], streamID)
+	fmt.Println("chunk generator: on publish stream ID", binary.LittleEndian.Uint32(createStreamResponseMessage[8:]))
 
-	// NetConnection is the default communication channel, which has a stream ID 0. Protocol and a few command messages, including createStream, use the default communication channel.
 
 	//---- BODY ----//
 	createStreamResponseMessage = append(createStreamResponseMessage, commandName...)

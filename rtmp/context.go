@@ -1,25 +1,26 @@
 package rtmp
 
 type Context struct {
-	sessions map[uint32]*Session
+	publishers       map[uint32]*Session
+	subscribers map[uint32][]*Session
 	numberOfSessions uint32
 }
 
 func NewContext() *Context {
 	return &Context{
-		sessions: make(map[uint32]*Session),
+		publishers: make(map[uint32]*Session),
 	}
 }
 
-// Registers the session in the context to keep a reference to all open sessions
+// Registers the session in the context to keep a reference to all open publishers
 func (c *Context) RegisterSession(id uint32, session *Session) {
-	c.sessions[id] = session
+	c.publishers[id] = session
 	c.numberOfSessions++
 }
 
 func (c *Context) DestroySession(id uint32) {
-	if _, exists := c.sessions[id]; exists {
-		delete(c.sessions, id)
+	if _, exists := c.publishers[id]; exists {
+		delete(c.publishers, id)
 		c.numberOfSessions--
 	}
 }

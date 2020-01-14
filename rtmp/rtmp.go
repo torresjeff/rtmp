@@ -33,9 +33,8 @@ func (server *Server) Run() error {
 		fmt.Println("rtmp: server: listening on", server.Addr)
 	}
 
-	// context stores information about all running sessions in a global object.
+	// context stores information about all running publishers in a global object.
 	context := NewContext()
-
 	// Loop infinitely, accepting any incoming connection. Every new connection will create a new session.
 	for {
 		conn, err := listener.Accept()

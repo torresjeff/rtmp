@@ -100,6 +100,7 @@ func NewSession(sessionID uint32, conn *net.Conn, context *Context) *Session {
 	}
 	chunkHandler := NewChunkHandler(session.socket)
 	session.messageManager = NewMessageManager(session, chunkHandler)
+	// TODO: register when we know what type of client this is: playback, publisher, etc.
 	context.RegisterSession(session.sessionID, session)
 	return session
 }
