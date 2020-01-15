@@ -1,26 +1,65 @@
 package rtmp
 
-type Context struct {
-	publishers       map[uint32]*Session
-	subscribers map[uint32][]*Session
+import (
+	"errors"
+	"fmt"
+)
+
+type ContextStore interface {
+	RegisterPublisher(streamKey string) error
+	DestroyPublisher(streamKey string) error
+	RegisterSubscriber(streamKey string, subscriber Subscriber) error
+	GetSubscribersForStream(streamKey string) ([]Subscriber, error)
+}
+
+type InMemoryContext struct {
+	ContextStore
+	subscribers      map[string][]Subscriber
 	numberOfSessions uint32
 }
 
-func NewContext() *Context {
-	return &Context{
-		publishers: make(map[uint32]*Session),
+var StreamNotFound error = errors.New("StreamNotFound")
+
+func NewInMemoryContext() *InMemoryContext {
+	return &InMemoryContext{
+		subscribers: make(map[string][]Subscriber),
 	}
 }
 
-// Registers the session in the context to keep a reference to all open publishers
-func (c *Context) RegisterSession(id uint32, session *Session) {
-	c.publishers[id] = session
+// Registers the session in the broadcaster to keep a reference to all open subscribers
+func (c *InMemoryContext) RegisterPublisher(streamKey string) error {
+	// Assume there will be a small amount of subscribers (ie. a few instances of ffmpeg that transcode our audio/video)
+	c.subscribers[streamKey] = make([]Subscriber, 0, 5)
+	fmt.Println("registered publisher with stream key", streamKey)
 	c.numberOfSessions++
+	return nil
 }
 
-func (c *Context) DestroySession(id uint32) {
-	if _, exists := c.publishers[id]; exists {
-		delete(c.publishers, id)
+func (c *InMemoryContext) DestroyPublisher(streamKey string) error {
+	if _, exists := c.subscribers[streamKey]; exists {
+		delete(c.subscribers, streamKey)
 		c.numberOfSessions--
 	}
+	return nil
+}
+
+func (c *InMemoryContext) RegisterSubscriber(streamKey string, subscriber Subscriber) error {
+	// If a stream with the key exists, then register the subscriber
+	if _, exists := c.subscribers[streamKey]; exists {
+		c.subscribers[streamKey] = append(c.subscribers[streamKey], subscriber)
+		return nil
+	}
+	// If no stream was found with that stream key, send an error
+	return StreamNotFound
+}
+
+func (c *InMemoryContext) GetSubscribersForStream(streamKey string) ([]Subscriber, error) {
+	// We could add a cache check if this context got the subscribers from a DB rather than from memory
+
+	// If a stream with the key exists, then return its subscribers
+	if subscribers, exists := c.subscribers[streamKey]; exists {
+		return subscribers, nil
+	}
+	// If no stream was found with that stream key, send an error
+	return nil, StreamNotFound
 }

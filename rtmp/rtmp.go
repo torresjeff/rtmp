@@ -33,8 +33,10 @@ func (server *Server) Run() error {
 		fmt.Println("rtmp: server: listening on", server.Addr)
 	}
 
-	// context stores information about all running publishers in a global object.
-	context := NewContext()
+	// broadcaster stores information about all running subscribers in a global object.
+	// TODO: allow specifying broadcaster store as a parameter when creating the server
+	context := NewInMemoryContext()
+	broadcaster := NewBroadcaster(context)
 	// Loop infinitely, accepting any incoming connection. Every new connection will create a new session.
 	for {
 		conn, err := listener.Accept()
@@ -47,7 +49,7 @@ func (server *Server) Run() error {
 		}
 
 		// Create a new session from the new connection (basically a wrapper of the connection + other data)
-		sess := NewSession(rand.GenerateSessionId(), &conn, context)
+		sess := NewSession(rand.GenerateSessionId(), &conn, broadcaster)
 
 		go func () {
 			err := sess.Run()

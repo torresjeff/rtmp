@@ -73,35 +73,36 @@ type Session struct {
 	conn           net.Conn
 	socket         *bufio.ReadWriter
 	clientMetadata clientMetadata
-	context        *Context // Stores session data
+	broadcaster    *Broadcaster // broadcasts audio/video messages to playback clients subscribed to a stream
+	active         bool         // true if the session is active
 
 	//handshakeState HandshakeState
 	c1 []byte
 	s1 []byte
 
-	// Interprets messages, calling the appropriate callback on the session
+	// Interprets messages, calling the appropriate callback on the session. Also in charge of sending messages.
 	messageManager *MessageManager
 
 	// app data
-	app          string
-	flashVer     string
-	swfUrl       string
-	tcUrl        string
-	typeOfStream string
-	streamKey    string // used to identify user
+	app            string
+	flashVer       string
+	swfUrl         string
+	tcUrl          string
+	typeOfStream   string
+	streamKey      string // used to identify user
+	publishingType string
 }
 
-func NewSession(sessionID uint32, conn *net.Conn, context *Context) *Session {
+func NewSession(sessionID uint32, conn *net.Conn, b *Broadcaster) *Session {
 	session := &Session{
-		sessionID: sessionID,
-		conn:      *conn,
-		socket:    bufio.NewReadWriter(bufio.NewReaderSize(*conn, config.BuffioSize), bufio.NewWriterSize(*conn, config.BuffioSize)),
-		context:   context,
+		sessionID:   sessionID,
+		conn:        *conn,
+		socket:      bufio.NewReadWriter(bufio.NewReaderSize(*conn, config.BuffioSize), bufio.NewWriterSize(*conn, config.BuffioSize)),
+		broadcaster: b,
+		active:      true,
 	}
 	chunkHandler := NewChunkHandler(session.socket)
 	session.messageManager = NewMessageManager(session, chunkHandler)
-	// TODO: register when we know what type of client this is: playback, publisher, etc.
-	context.RegisterSession(session.sessionID, session)
 	return session
 }
 
@@ -110,7 +111,7 @@ func (session *Session) Run() error {
 	// Perform handshake
 	err := session.Handshake()
 	if err != nil {
-		session.context.DestroySession(session.sessionID)
+		session.broadcaster.DestroyPublisher(session.streamKey)
 		session.conn.Close()
 		return err
 	}
@@ -121,13 +122,18 @@ func (session *Session) Run() error {
 
 	// After handshake, start reading chunks
 	for {
-		if err := session.messageManager.nextMessage(); err == io.EOF {
-			session.context.DestroySession(session.sessionID)
-			session.conn.Close()
+		if session.active {
+			if err := session.messageManager.nextMessage(); err == io.EOF {
+				session.broadcaster.DestroyPublisher(session.streamKey)
+				session.conn.Close()
+				return nil
+			} else if err != nil {
+				session.broadcaster.DestroyPublisher(session.streamKey)
+				return err
+			}
+		} else {
+			// Session is over, finish the session
 			return nil
-		} else if err != nil {
-			session.context.DestroySession(session.sessionID)
-			return err
 		}
 	}
 }
@@ -258,7 +264,9 @@ func (session *Session) onConnect(csID uint32, transactionID float64, data map[s
 		// Send Connect Success response
 		session.messageManager.sendConnectSuccess(csID)
 	} else {
-		fmt.Println("session: user trying to connect to app", session.app, ", but the app doesn't exist")
+		fmt.Println("session: user trying to connect to app \"" + session.app + "\", but the app doesn't exist. Closing connection.")
+		session.active = false
+		session.conn.Close()
 	}
 }
 
@@ -420,12 +428,19 @@ func (session *Session) onPublish(csID uint32, streamID uint32, transactionID fl
 	// TODO: Handle things like look up the user's stream key, check if it's valid.
 	// TODO: For example: twitch returns "Publishing live_user_<username>" in the description.
 	// TODO: Handle things like recording into a file if publishingType = "record" or "append"
+
+
 	// infoObject should have at least three properties: level, code, and description. But may contain other properties.
 	infoObject := map[string]interface{}{
 		"level": "status",
 		"code": "NetStream.Publish.Start",
 		"description": "Publishing live_user_<x>",
 	}
+
+	session.streamKey = streamKey
+	session.publishingType = publishingType
+	session.broadcaster.RegisterPublisher(streamKey)
+
 	// TODO: the transaction ID for onStatus messages should be 0 as per the spec. But twitch sends the transaction ID that was in the request to "publish".
 	// For now, reply with the same transaction ID.
 	message := generateStatusMessage(transactionID, streamID, infoObject)
@@ -434,7 +449,9 @@ func (session *Session) onPublish(csID uint32, streamID uint32, transactionID fl
 }
 
 func (session *Session) onFCUnpublish(csID uint32, transactionID float64, args map[string]interface{}, streamKey string) {
-	session.context.DestroySession(session.sessionID)
+	// TODO: Finish broadcasting the messages to every viewer before destroying the session,
+	// if we delete the session from the broadcaster, this may result in a nil pointer exception
+	session.broadcaster.DestroyPublisher(session.streamKey)
 }
 
 func (session *Session) onDeleteStream(csID uint32, transactionId float64, args map[string]interface{}, streamID float64) {
@@ -476,26 +493,26 @@ func (session *Session) onAudioMessage(format audio.Format, sampleRate audio.Sam
 		}
 	}
 
-	// TODO: broadcast the audio message to all playback clients subscribed to this stream
+	session.broadcaster.broadcastAudio(session.streamKey, audioData)
 }
 
 // videoData is the full payload (it has the video headers at the beginning of the payload), for easy forwarding
-func (s *Session) onVideoMessage(frameType video.FrameType, codec video.Codec, videoData []byte) {
+func (session *Session) onVideoMessage(frameType video.FrameType, codec video.Codec, videoData []byte) {
 	if config.Debug {
 		switch frameType {
 		case video.KeyFrame:
-			fmt.Printf("key frame")
+			fmt.Printf("key frame\n")
 		case video.InterFrame:
-			fmt.Printf("inter frame")
+			//fmt.Printf("inter frame")
 		}
 
 		switch codec {
 		case video.H264:
-			fmt.Printf(", h264 (avv)\n")
-		case video.H263:
-			fmt.Printf(", h263\n")
+			fmt.Printf("h264 (avc)\n")
+		case video.SorensonH263:
+			fmt.Printf("sorenson h263\n")
 		}
 	}
 
-	// TODO: broadcast the video message to all playback clients subscribed to this stream
+	session.broadcaster.broadcastVideo(session.streamKey, videoData)
 }

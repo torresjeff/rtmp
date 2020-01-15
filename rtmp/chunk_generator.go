@@ -2,7 +2,6 @@ package rtmp
 
 import (
 	"encoding/binary"
-	"fmt"
 	"github.com/torresjeff/rtmp-server/amf/amf0"
 	"github.com/torresjeff/rtmp-server/config"
 )
@@ -312,10 +311,8 @@ func generateStatusMessage(transactionID float64, streamID uint32, infoObject ma
 	// Set type to AMF0 command (20)
 	createStreamResponseMessage[7] = CommandMessageAMF0
 
-	// Set stream ID to whatever stream ID the request had (bytes 8-11)
+	// Set stream ID to whatever stream ID the request had (bytes 8-11). Stream ID is stored in LITTLE ENDIAN format.
 	binary.LittleEndian.PutUint32(createStreamResponseMessage[8:], streamID)
-	fmt.Println("chunk generator: on publish stream ID", binary.LittleEndian.Uint32(createStreamResponseMessage[8:]))
-
 
 	//---- BODY ----//
 	createStreamResponseMessage = append(createStreamResponseMessage, commandName...)

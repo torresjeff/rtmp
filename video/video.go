@@ -14,12 +14,12 @@ const (
 
 type Codec uint8
 const (
-	H263 Codec = 2
-	ScreenVideo Codec = 3
-	VP6 Codec = 4
+	SorensonH263    Codec = 2
+	ScreenVideo     Codec = 3
+	VP6             Codec = 4
 	VP6AlphaChannel Codec = 5
-	ScreenVideoV2 Codec = 6
-	H264 Codec = 7
+	ScreenVideoV2   Codec = 6
+	H264            Codec = 7
 )
 
 type AVCPacketType uint8
