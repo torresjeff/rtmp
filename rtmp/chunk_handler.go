@@ -61,6 +61,7 @@ type ChunkHandler struct {
 	socket          *bufio.ReadWriter
 	prevChunkHeader *ChunkHeader
 	inChunkSize     uint32
+	outChunkSize     uint32
 	windowAckSize   uint32
 	bytesReceived   uint32
 	outBandwidth    uint32
@@ -106,6 +107,7 @@ func NewChunkHandler(reader *bufio.ReadWriter) *ChunkHandler {
 	return &ChunkHandler{
 		socket:             reader,
 		inChunkSize:        DefaultMaximumChunkSize,
+		outChunkSize: DefaultMaximumChunkSize,
 		ackSent:            false,
 	}
 }
@@ -349,6 +351,7 @@ func (chunkHandler *ChunkHandler) sendSetChunkSize(size uint32) {
 	message := generateSetChunkSizeMessage(size)
 	chunkHandler.socket.Write(message)
 	chunkHandler.socket.Flush()
+	chunkHandler.outChunkSize = size
 }
 
 func (chunkHandler *ChunkHandler) sendConnectSuccess(csID uint32) {
@@ -389,4 +392,61 @@ func (chunkHandler *ChunkHandler) SetBandwidth(size uint32, limitType uint8) {
 	// For now, ignore the limitType. Treat it as a hard limit (always set the window size)
 	// TODO: what is the purpose of set bandwidth?
 	//chunkHandler.SetWindowAckSize(size)
+}
+
+func (chunkHandler *ChunkHandler) send(header []byte, payload []byte) error {
+	_, err := chunkHandler.socket.Write(header)
+	if err != nil {
+		return err
+	}
+
+	// Determine if we have to chunk our payload
+	if len(payload) > int(chunkHandler.outChunkSize) {
+		payloadLength := len(payload)
+		// TODO: whenever we fragment a message, is it always with type 3 chunks?
+		// take whatever csid came in the original header, and use it for future chunks. Also specify fmt = 3 (chunk header - type 3) for subsequent chunks
+		chunk3Header := (3 << 6) | (header[0] & 0x3F)
+
+		chunkSize := int(chunkHandler.outChunkSize)
+		bytesWritten := 0 // bytes of the PAYLOAD we've written
+		// True if this is the first time we're going to write payload data in a chunk
+		firstPayloadChunk := true
+		for bytesWritten < payloadLength {
+			if !firstPayloadChunk {
+				// We've already written payload data, so separate it with a chunk type 3 header
+				err = chunkHandler.socket.WriteByte(chunk3Header)
+				if err != nil {
+					return err
+				}
+			} else {
+				firstPayloadChunk = false
+			}
+			// if the next chunk is still not the end of the message, write chunk size bytes
+			if bytesWritten + chunkSize < payloadLength {
+				_, err = chunkHandler.socket.Write(payload[bytesWritten:bytesWritten + chunkSize])
+				if err != nil {
+					return err
+				}
+				bytesWritten += chunkSize
+			} else {
+				// Write remaining data
+				remainingBytes := payloadLength - bytesWritten
+				_, err = chunkHandler.socket.Write(payload[bytesWritten:bytesWritten + remainingBytes])
+				bytesWritten += remainingBytes
+			}
+		}
+	} else {
+		// No chunking needed
+		_, err := chunkHandler.socket.Write(payload)
+		if err != nil {
+			return err
+		}
+	}
+
+	err = chunkHandler.socket.Flush()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

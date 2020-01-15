@@ -40,6 +40,16 @@ func (m *MessageManager) nextMessage() error {
 }
 
 func (m *MessageManager) interpretMessage(header *ChunkHeader, payload []byte) error {
+	// calculate timestamp from headers. Useful for audio/video messages
+	// Header has an extended timestamp
+	var timestamp uint32
+	if header.MessageHeader.Timestamp == 0xFFFFFF || header.MessageHeader.TimestampDelta == 0xFFFFFF {
+		timestamp = header.ExtendedTimestamp
+	} else if header.BasicHeader.FMT == ChunkType0 {
+		timestamp = header.MessageHeader.Timestamp
+	} else {
+		timestamp = header.MessageHeader.TimestampDelta
+	}
 	switch header.MessageHeader.MessageTypeID {
 	case SetChunkSize, AbortMessage, Ack, WindowAckSize, SetPeerBandwidth:
 		return m.handleControlMessage(header, payload)
@@ -50,10 +60,9 @@ func (m *MessageManager) interpretMessage(header *ChunkHeader, payload []byte) e
 	case DataMessageAMF0, DataMessageAMF3:
 		return m.handleDataMessage(header.MessageHeader.MessageTypeID, payload)
 	case AudioMessage:
-		fmt.Println("message manager: received audio message")
-		return m.handleAudioMessage(header.BasicHeader.ChunkStreamID, header.MessageHeader.MessageStreamID, payload)
+		return m.handleAudioMessage(header.BasicHeader.ChunkStreamID, header.MessageHeader.MessageStreamID, payload, timestamp, header.BasicHeader.FMT)
 	case VideoMessage:
-		return m.handleVideoMessage(header.BasicHeader.ChunkStreamID, header.MessageHeader.MessageStreamID, payload)
+		return m.handleVideoMessage(header.BasicHeader.ChunkStreamID, header.MessageHeader.MessageStreamID, payload, timestamp, header.BasicHeader.FMT)
 	default:
 		return errors.New(fmt.Sprintf("message manager: received unknown message type ID in header, ID (decimal): %d", header.MessageHeader.MessageTypeID))
 	}
@@ -169,6 +178,18 @@ func (m *MessageManager) handleCommandAmf0(csID uint32, streamID uint32, command
 		// - live: Live data is published without recording it in a file.
 		publishingType, _ := amf0.Decode(payload)
 		m.session.onPublish(csID, streamID, transactionId, commandObject, streamKey.(string), publishingType.(string))
+	case "play":
+		streamKey, _ := amf0.Decode(payload)
+		byteLength = amf0.Size(streamKey)
+		payload = payload[byteLength:]
+
+		// Start time in seconds
+		startTime, _ := amf0.Decode(payload)
+		byteLength = amf0.Size(streamKey)
+		payload = payload[byteLength:]
+
+		// TODO: the spec specifies that, the next values should be duration (number), and reset (bool), but VLC doesn't send them
+		m.session.onPlay(streamKey.(string), startTime.(float64))
 	case "FCUnpublish":
 		streamKey, _ := amf0.Decode(payload)
 		m.session.onFCUnpublish(csID, transactionId, commandObject, streamKey.(string))
@@ -222,23 +243,23 @@ func (m *MessageManager) handleDataMessageAmf0(dataName string, payload []byte) 
 	}
 }
 
-func (m *MessageManager) handleAudioMessage(chunkStreamID uint32, messageStreamID uint32, payload []byte) error {
+func (m *MessageManager) handleAudioMessage(chunkStreamID uint32, messageStreamID uint32, payload []byte, timestamp uint32, chunkType uint8) error {
 	// Header contains sound format, rate, size, type
 	audioHeader := payload[0]
 	format := audio.Format((audioHeader >> 4) & 0x3F)
 	sampleRate := audio.SampleRate((audioHeader >> 2) & 0x03)
 	sampleSize := audio.SampleSize((audioHeader >> 1) & 1)
 	channels := audio.Channel((audioHeader) & 1)
-	m.session.onAudioMessage(format, sampleRate, sampleSize, channels, payload)
+	m.session.onAudioMessage(format, sampleRate, sampleSize, channels, payload, timestamp, chunkType)
 	return nil
 }
 
-func (m *MessageManager) handleVideoMessage(csID uint32, messageStreamID uint32, payload []byte) error {
+func (m *MessageManager) handleVideoMessage(csID uint32, messageStreamID uint32, payload []byte, timestamp uint32, chunkType uint8) error {
 	// Header contains frame type (key frame, i-frame, etc.) and format/codec (H264, etc.)
 	videoHeader := payload[0]
 	frameType := video.FrameType((videoHeader >> 4) & 0x0F)
 	codec := video.Codec(videoHeader & 0x0F)
-	m.session.onVideoMessage(frameType, codec, payload)
+	m.session.onVideoMessage(frameType, codec, payload, timestamp, chunkType)
 	return nil
 }
 
@@ -273,4 +294,128 @@ func (m *MessageManager) sendSetChunkSize(size uint32) {
 func (m *MessageManager) sendConnectSuccess(csID uint32) {
 	m.chunkHandler.sendConnectSuccess(csID)
 }
+
+func (m *MessageManager) sendAudio(audio []byte, timestamp uint32, chunkType uint8) {
+	var header []byte
+	extendedTimestamp := timestamp >= 0xFFFFFF
+	messageLength := len(audio)
+	// TODO: check if this is the first time sending audio to the client, if it is, we need to send a type 0 chunk, followed by type 1 chunks
+	// TODO: with this check, we could decouple chunkType
+	if chunkType == ChunkType0 {
+		if extendedTimestamp {
+			header = make([]byte, 16)
+			// TODO: determine the chunk stream at run time
+			// TODO: Should session store the chunk stream ID that it's using to communicate?
+			// TODO: handle cases where csid is greater than 1 byte
+			// fmt = 0 (chunk header - type 0) and chunk stream ID = 4
+			header[0] = 4
+
+			// since we have an extended timestamp, fill the timestamp with 0xFFFFFF
+			header[1] = 0xFF
+			header[2] = 0xFF
+			header[3] = 0xFF
+
+			// Body size
+			header[4] = byte((messageLength >> 16) & 0xFF)
+			header[5] = byte((messageLength >> 8) & 0xFF)
+			header[6] = byte(messageLength)
+
+			// Type ID
+			header[7] = AudioMessage
+
+			// Extended timestamp
+			binary.BigEndian.PutUint32(header[8:], timestamp)
+
+			// TODO: determine stream ID at runtime, we should store the stream ID that was created with the createStream command
+			binary.LittleEndian.PutUint32(header[12:], 1)
+		} else {
+			header = make([]byte, 12)
+
+			// TODO: determine the chunk stream at run time
+			// TODO: Should session store the chunk stream ID that it's using to communicate?
+			// TODO: handle cases where csid is greater than 1 byte
+			// fmt = 0 (chunk header - type 0) and chunk stream ID = 4
+			header[0] = 4
+
+			// timestamp
+			header[1] = byte((timestamp >> 16) & 0xFF)
+			header[2] = byte((timestamp >> 8) & 0xFF)
+			header[3] = byte(timestamp)
+
+			// Body size
+			header[4] = byte((messageLength >> 16) & 0xFF)
+			header[5] = byte((messageLength >> 8) & 0xFF)
+			header[6] = byte(messageLength)
+
+			// Type ID
+			header[7] = AudioMessage
+
+			// TODO: determine stream ID at runtime, we should store the stream ID that was created with the createStream command
+			binary.LittleEndian.PutUint32(header[8:], 1)
+		}
+	} else if chunkType == ChunkType1 {
+		if extendedTimestamp {
+			header = make([]byte, 12)
+
+			// TODO: determine the chunk stream at run time
+			// TODO: Should session store the chunk stream ID that it's using to communicate?
+			// TODO: handle cases where csid is greater than 1 byte
+			// fmt = 1 (chunk header - type 1) and chunk stream ID = 4
+			header[0] = (1 << 6) | 4
+
+			// since we have an extended timestamp, fill the timestamp with 0xFFFFFF
+			header[1] = 0xFF
+			header[2] = 0xFF
+			header[3] = 0xFF
+
+			// Body size
+			header[4] = byte((messageLength >> 16) & 0xFF)
+			header[5] = byte((messageLength >> 8) & 0xFF)
+			header[6] = byte(messageLength)
+
+			// Type ID
+			header[7] = AudioMessage
+
+			// Extended timestamp
+			binary.BigEndian.PutUint32(header[8:], timestamp)
+
+			// This is a type 1 chunk header, so no need to specify stream ID
+
+		} else {
+			header = make([]byte, 8)
+
+			// TODO: determine the chunk stream at run time
+			// TODO: Should session store the chunk stream ID that it's using to communicate?
+			// TODO: handle cases where csid is greater than 1 byte
+			// fmt = 1 (chunk header - type 1) and chunk stream ID = 4
+			header[0] = (1 << 6) | 4
+
+			// timestamp
+			header[1] = byte((timestamp >> 16) & 0xFF)
+			header[2] = byte((timestamp >> 8) & 0xFF)
+			header[3] = byte(timestamp)
+
+			// Body size
+			header[4] = byte((messageLength >> 16) & 0xFF)
+			header[5] = byte((messageLength >> 8) & 0xFF)
+			header[6] = byte(messageLength)
+
+			// Type ID
+			header[7] = AudioMessage
+
+			// This is a type 1 chunk header, so no need to specify stream ID
+		}
+	} else {
+		// TODO: implement chunk type 2 and type 3
+	}
+
+	// The chunk handler will divide these into more chunks if the payload is greater than the chunk size
+	m.chunkHandler.send(header, audio)
+}
+
+func (m *MessageManager) sendVideo(video []byte, timestamp uint32, chunkType uint8) {
+	//m.chunkHandler.send(video)
+}
+
+
 

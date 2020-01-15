@@ -62,8 +62,9 @@ type MediaServer interface {
 	onFCUnpublish(csID uint32, transactionId float64, args map[string]interface{}, streamKey string)
 	onDeleteStream(csID uint32, transactionId float64, args map[string]interface{}, streamID float64)
 	onCloseStream(csID uint32, transactionId float64, args map[string]interface{})
-	onAudioMessage(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, bytes []byte)
-	onVideoMessage(frameType video.FrameType, codec video.Codec, bytes []byte)
+	onAudioMessage(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, payload []byte, timestamp uint32, chunkType uint8)
+	onVideoMessage(frameType video.FrameType, codec video.Codec, payload []byte, timestamp uint32, chunkType uint8)
+	onPlay(streamKey string, startTime float64)
 }
 
 // Represents a connection made with the RTMP server where messages are exchanged between client/server.
@@ -439,13 +440,14 @@ func (session *Session) onPublish(csID uint32, streamID uint32, transactionID fl
 
 	session.streamKey = streamKey
 	session.publishingType = publishingType
-	session.broadcaster.RegisterPublisher(streamKey)
 
 	// TODO: the transaction ID for onStatus messages should be 0 as per the spec. But twitch sends the transaction ID that was in the request to "publish".
 	// For now, reply with the same transaction ID.
 	message := generateStatusMessage(transactionID, streamID, infoObject)
 	session.socket.Write(message)
 	session.socket.Flush()
+
+	session.broadcaster.RegisterPublisher(streamKey)
 }
 
 func (session *Session) onFCUnpublish(csID uint32, transactionID float64, args map[string]interface{}, streamKey string) {
@@ -463,7 +465,7 @@ func (session *Session) onCloseStream(csID uint32, transactionId float64, args m
 
 // audioData is the full payload (it has the audio headers at the beginning of the payload), for easy forwarding
 // If format == audio.AAC, audioData will contain AACPacketType at index 1
-func (session *Session) onAudioMessage(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, audioData []byte) {
+func (session *Session) onAudioMessage(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, payload []byte, timestamp uint32, chunkType uint8) {
 	if config.Debug {
 		switch format {
 		case audio.MP3:
@@ -493,11 +495,11 @@ func (session *Session) onAudioMessage(format audio.Format, sampleRate audio.Sam
 		}
 	}
 
-	session.broadcaster.broadcastAudio(session.streamKey, audioData)
+	session.broadcaster.broadcastAudio(session.streamKey, payload, timestamp, chunkType)
 }
 
 // videoData is the full payload (it has the video headers at the beginning of the payload), for easy forwarding
-func (session *Session) onVideoMessage(frameType video.FrameType, codec video.Codec, videoData []byte) {
+func (session *Session) onVideoMessage(frameType video.FrameType, codec video.Codec, payload []byte, timestamp uint32, chunkType uint8) {
 	if config.Debug {
 		switch frameType {
 		case video.KeyFrame:
@@ -514,5 +516,17 @@ func (session *Session) onVideoMessage(frameType video.FrameType, codec video.Co
 		}
 	}
 
-	session.broadcaster.broadcastVideo(session.streamKey, videoData)
+	session.broadcaster.broadcastVideo(session.streamKey, payload, timestamp, chunkType)
+}
+
+func (session *Session) onPlay(streamKey string, startTime float64) {
+	session.broadcaster.RegisterSubscriber(streamKey, session)
+}
+
+func (session *Session) sendAudio(audio []byte, timestamp uint32, chunkType uint8) {
+	session.messageManager.sendAudio(audio, timestamp, chunkType)
+}
+
+func (session *Session) sendVideo(video []byte, timestamp uint32, chunkType uint8) {
+	session.messageManager.sendVideo(video, timestamp, chunkType)
 }
