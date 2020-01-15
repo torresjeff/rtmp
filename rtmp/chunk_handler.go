@@ -328,6 +328,7 @@ func (chunkHandler *ChunkHandler) updateBytesReceived(i uint32) {
 	}
 }
 
+// TODO: handle errors for all of these functions
 func (chunkHandler *ChunkHandler) sendWindowAckSize(size uint32) {
 	message := generateWindowAckSizeMessage(size)
 	// TODO: wrap the socket in a more user friendly struct that uses Write and Flush in one method
@@ -449,4 +450,9 @@ func (chunkHandler *ChunkHandler) send(header []byte, payload []byte) error {
 	}
 
 	return nil
+}
+
+func (chunkHandler *ChunkHandler) sendBytes(bytes []byte) {
+	chunkHandler.socket.Write(bytes)
+	chunkHandler.socket.Flush()
 }

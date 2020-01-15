@@ -520,7 +520,18 @@ func (session *Session) onVideoMessage(frameType video.FrameType, codec video.Co
 }
 
 func (session *Session) onPlay(streamKey string, startTime float64) {
-	session.broadcaster.RegisterSubscriber(streamKey, session)
+	err := session.broadcaster.RegisterSubscriber(streamKey, session)
+	if err != nil {
+		// TODO: send failure response to client
+	}
+
+	// TODO: Send reset if the client sent it in the request
+	infoObject := map[string]interface{}{
+		"level": "status",
+		"code": "NetStream.Play.Start",
+		"description": "Playing stream for live_user_<x>",
+	}
+	session.messageManager.sendPlayStart(infoObject)
 }
 
 func (session *Session) sendAudio(audio []byte, timestamp uint32, chunkType uint8) {
