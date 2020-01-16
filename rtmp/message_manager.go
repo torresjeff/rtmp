@@ -90,10 +90,10 @@ func (m *MessageManager) interpretMessage(header ChunkHeader, payload []byte) er
 		return m.handleDataMessage(header.MessageHeader.MessageTypeID, payload)
 	case AudioMessage:
 		//fmt.Print(" audio\n")
-		return m.handleAudioMessage(header.BasicHeader.ChunkStreamID, header.MessageHeader.MessageStreamID, payload, header.ElapsedTime, header.BasicHeader.FMT)
+		return m.handleAudioMessage(header.BasicHeader.ChunkStreamID, header.MessageHeader.MessageStreamID, payload, header.ElapsedTime)
 	case VideoMessage:
 		//fmt.Print(" video\n")
-		return m.handleVideoMessage(header.BasicHeader.ChunkStreamID, header.MessageHeader.MessageStreamID, payload, header.ElapsedTime, header.BasicHeader.FMT)
+		return m.handleVideoMessage(header.BasicHeader.ChunkStreamID, header.MessageHeader.MessageStreamID, payload, header.ElapsedTime)
 	default:
 		return errors.New(fmt.Sprintf("message manager: received unknown message type ID in header, ID (decimal): %d", header.MessageHeader.MessageTypeID))
 	}
@@ -274,23 +274,23 @@ func (m *MessageManager) handleDataMessageAmf0(dataName string, payload []byte) 
 	}
 }
 
-func (m *MessageManager) handleAudioMessage(chunkStreamID uint32, messageStreamID uint32, payload []byte, timestamp uint32, chunkType uint8) error {
+func (m *MessageManager) handleAudioMessage(chunkStreamID uint32, messageStreamID uint32, payload []byte, timestamp uint32) error {
 	// Header contains sound format, rate, size, type
 	audioHeader := payload[0]
 	format := audio.Format((audioHeader >> 4) & 0x0F)
 	sampleRate := audio.SampleRate((audioHeader >> 2) & 0x03)
 	sampleSize := audio.SampleSize((audioHeader >> 1) & 1)
 	channels := audio.Channel((audioHeader) & 1)
-	m.session.onAudioMessage(format, sampleRate, sampleSize, channels, payload, timestamp, chunkType)
+	m.session.onAudioMessage(format, sampleRate, sampleSize, channels, payload, timestamp)
 	return nil
 }
 
-func (m *MessageManager) handleVideoMessage(csID uint32, messageStreamID uint32, payload []byte, timestamp uint32, chunkType uint8) error {
+func (m *MessageManager) handleVideoMessage(csID uint32, messageStreamID uint32, payload []byte, timestamp uint32) error {
 	// Header contains frame type (key frame, i-frame, etc.) and format/codec (H264, etc.)
 	videoHeader := payload[0]
 	frameType := video.FrameType((videoHeader >> 4) & 0x0F)
 	codec := video.Codec(videoHeader & 0x0F)
-	m.session.onVideoMessage(frameType, codec, payload, timestamp, chunkType)
+	m.session.onVideoMessage(frameType, codec, payload, timestamp)
 	return nil
 }
 
@@ -356,7 +356,7 @@ func (m *MessageManager) sendAudio(audio []byte, timestamp uint32) {
 		// Extended timestamp
 		binary.BigEndian.PutUint32(header[8:], timestamp)
 
-		// TODO: determine stream ID at runtime, we should store the stream ID that was created with the createStream command
+		// TODO: make stream ID constant for audio/video messages
 		binary.LittleEndian.PutUint32(header[12:], 1)
 	} else {
 		header = make([]byte, 12)
@@ -368,7 +368,6 @@ func (m *MessageManager) sendAudio(audio []byte, timestamp uint32) {
 		header[0] = 4
 
 		// timestamp
-		// TODO: is timestamp affecting the frequency of the audio?
 		header[1] = byte((timestamp >> 16) & 0xFF)
 		header[2] = byte((timestamp >> 8) & 0xFF)
 		header[3] = byte(timestamp)
@@ -381,10 +380,10 @@ func (m *MessageManager) sendAudio(audio []byte, timestamp uint32) {
 		// Type ID
 		header[7] = AudioMessage
 
-		// TODO: determine stream ID at runtime, we should store the stream ID that was created with the createStream command
+		// TODO: make stream ID constant for audio/video messages
 		binary.LittleEndian.PutUint32(header[8:], 1)
 	}
-
+	fmt.Println("audio timestamp =", timestamp)
 	// The chunk handler will divide these into more chunks if the payload is greater than the chunk size
 	m.chunkHandler.send(header, audio)
 }
@@ -393,7 +392,7 @@ func (m *MessageManager) sendVideo(video []byte, timestamp uint32) {
 	var header []byte
 	isExtendedTimestamp := timestamp >= 0xFFFFFF
 	messageLength := len(video)
-	//fmt.Println("sending video with timestamp", timestamp)
+
 	// Always send video as type 0 chunk for playback clients
 	if isExtendedTimestamp {
 		header = make([]byte, 16)
@@ -419,7 +418,7 @@ func (m *MessageManager) sendVideo(video []byte, timestamp uint32) {
 		// Extended timestamp
 		binary.BigEndian.PutUint32(header[8:], timestamp)
 
-		// TODO: determine stream ID at runtime, we should store the stream ID that was created with the createStream command
+		// TODO: make stream ID constant for audio/video messages
 		binary.LittleEndian.PutUint32(header[12:], 1)
 	} else {
 		header = make([]byte, 12)
@@ -428,10 +427,9 @@ func (m *MessageManager) sendVideo(video []byte, timestamp uint32) {
 		// TODO: Should session store the chunk stream ID that it's using to communicate?
 		// TODO: handle cases where csid is greater than 1 byte
 		// fmt = 0 (chunk header - type 0) and chunk stream ID = 4
-		header[0] = 5
+		header[0] = 4
 
 		// timestamp
-		// TODO: is timestamp affecting the frequency of the video?
 		header[1] = byte((timestamp >> 16) & 0xFF)
 		header[2] = byte((timestamp >> 8) & 0xFF)
 		header[3] = byte(timestamp)
@@ -444,10 +442,10 @@ func (m *MessageManager) sendVideo(video []byte, timestamp uint32) {
 		// Type ID
 		header[7] = VideoMessage
 
-		// TODO: determine stream ID at runtime, we should store the stream ID that was created with the createStream command
+		// TODO: make stream ID constant for audio/video messages
 		binary.LittleEndian.PutUint32(header[8:], 1)
 	}
-
+	fmt.Println("video timestamp =", timestamp)
 	m.chunkHandler.send(header, video)
 }
 

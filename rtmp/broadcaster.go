@@ -34,7 +34,7 @@ func (b* Broadcaster) RegisterSubscriber(streamKey string, subscriber Subscriber
 
 
 
-func (b *Broadcaster) broadcastAudio(streamKey string, audio []byte, timestamp uint32, chunkType uint8) error {
+func (b *Broadcaster) broadcastAudio(streamKey string, audio []byte, timestamp uint32) error {
 	// TODO: should this use goroutines? Problem with using goroutines: if the publisher's session is destroyed, the context will delete the session ID,
 	// TODO: trying to get the publisher's sessionID from the context will result in a panic (because we're trying to access a key that doesn't exist).
 	// TODO: This could lead to some playback clients receiving the last audio/video message sent by the publisher, and other clients won't get it,
@@ -50,7 +50,7 @@ func (b *Broadcaster) broadcastAudio(streamKey string, audio []byte, timestamp u
 	return nil
 }
 
-func (b *Broadcaster) broadcastVideo(streamKey string, video []byte, timestamp uint32, chunkType uint8) error {
+func (b *Broadcaster) broadcastVideo(streamKey string, video []byte, timestamp uint32) error {
 	// TODO: should this use goroutines? Problem with using goroutines: if the publisher's session is destroyed, the context will delete the session ID,
 	// TODO: trying to get the publisher's sessionID from the context will result in a panic (because we're trying to access a key that doesn't exist).
 	// TODO: This could lead to some playback clients receiving the last audio/video message sent by the publisher, and other clients won't get it,

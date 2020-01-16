@@ -397,7 +397,6 @@ func (chunkHandler *ChunkHandler) send(header []byte, payload []byte) error {
 	// Determine if we have to chunk our payload
 	if len(payload) > int(chunkHandler.outChunkSize) {
 		payloadLength := len(payload)
-		// TODO: whenever we fragment a message, is it always with type 3 chunks?
 		// take whatever csid came in the original header, and use it for future chunks. Also specify fmt = 3 (chunk header - type 3) for subsequent chunks
 		chunk3Header := (ChunkType3 << 6) | (header[0] & 0x3F)
 
@@ -441,7 +440,6 @@ func (chunkHandler *ChunkHandler) send(header []byte, payload []byte) error {
 	if err != nil {
 		return err
 	}
-
 	return nil
 }
 

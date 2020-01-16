@@ -62,8 +62,8 @@ type MediaServer interface {
 	onFCUnpublish(csID uint32, transactionId float64, args map[string]interface{}, streamKey string)
 	onDeleteStream(csID uint32, transactionId float64, args map[string]interface{}, streamID float64)
 	onCloseStream(csID uint32, transactionId float64, args map[string]interface{})
-	onAudioMessage(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, payload []byte, timestamp uint32, chunkType uint8)
-	onVideoMessage(frameType video.FrameType, codec video.Codec, payload []byte, timestamp uint32, chunkType uint8)
+	onAudioMessage(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, payload []byte, timestamp uint32)
+	onVideoMessage(frameType video.FrameType, codec video.Codec, payload []byte, timestamp uint32)
 	onPlay(streamKey string, startTime float64)
 
 	// True if no audio message has been sent yet to this subscriber
@@ -472,13 +472,13 @@ func (session *Session) onCloseStream(csID uint32, transactionId float64, args m
 
 // audioData is the full payload (it has the audio headers at the beginning of the payload), for easy forwarding
 // If format == audio.AAC, audioData will contain AACPacketType at index 1
-func (session *Session) onAudioMessage(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, payload []byte, timestamp uint32, chunkType uint8) {
-	session.broadcaster.broadcastAudio(session.streamKey, payload, timestamp, chunkType)
+func (session *Session) onAudioMessage(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, payload []byte, timestamp uint32) {
+	session.broadcaster.broadcastAudio(session.streamKey, payload, timestamp)
 }
 
 // videoData is the full payload (it has the video headers at the beginning of the payload), for easy forwarding
-func (session *Session) onVideoMessage(frameType video.FrameType, codec video.Codec, payload []byte, timestamp uint32, chunkType uint8) {
-	session.broadcaster.broadcastVideo(session.streamKey, payload, timestamp, chunkType)
+func (session *Session) onVideoMessage(frameType video.FrameType, codec video.Codec, payload []byte, timestamp uint32) {
+	session.broadcaster.broadcastVideo(session.streamKey, payload, timestamp)
 }
 
 func (session *Session) onPlay(streamKey string, startTime float64) {
