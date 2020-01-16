@@ -65,6 +65,11 @@ type MediaServer interface {
 	onAudioMessage(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, payload []byte, timestamp uint32, chunkType uint8)
 	onVideoMessage(frameType video.FrameType, codec video.Codec, payload []byte, timestamp uint32, chunkType uint8)
 	onPlay(streamKey string, startTime float64)
+
+	// True if no audio message has been sent yet to this subscriber
+	// TODO: this should be part of the subscriber, not the media server
+	isFirstAudioMessage() bool
+	setFirstAudioMessage(firstAudioMessage bool)
 }
 
 // Represents a connection made with the RTMP server where messages are exchanged between client/server.
@@ -92,6 +97,7 @@ type Session struct {
 	typeOfStream   string
 	streamKey      string // used to identify user
 	publishingType string
+	firstAudioMessage bool
 }
 
 func NewSession(sessionID uint32, conn *net.Conn, b *Broadcaster) *Session {
@@ -101,6 +107,7 @@ func NewSession(sessionID uint32, conn *net.Conn, b *Broadcaster) *Session {
 		socket:      bufio.NewReadWriter(bufio.NewReaderSize(*conn, config.BuffioSize), bufio.NewWriterSize(*conn, config.BuffioSize)),
 		broadcaster: b,
 		active:      true,
+		firstAudioMessage: true,
 	}
 	chunkHandler := NewChunkHandler(session.socket)
 	session.messageManager = NewMessageManager(session, chunkHandler)
@@ -466,56 +473,11 @@ func (session *Session) onCloseStream(csID uint32, transactionId float64, args m
 // audioData is the full payload (it has the audio headers at the beginning of the payload), for easy forwarding
 // If format == audio.AAC, audioData will contain AACPacketType at index 1
 func (session *Session) onAudioMessage(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, payload []byte, timestamp uint32, chunkType uint8) {
-	if config.Debug {
-		switch format {
-		case audio.MP3:
-			fmt.Print("format: mp3")
-		case audio.AAC:
-			fmt.Print("format: aac")
-		}
-		switch sampleRate {
-		case audio.Rate44KHz:
-			fmt.Print(", sample rate: 44Kz")
-		default:
-			fmt.Print(", other sample rate")
-		}
-
-		switch sampleSize {
-		case audio.Size8Bit:
-			fmt.Print(", 8-bit sample size")
-		case audio.Size16Bit:
-			fmt.Print(", 16-bit sample size")
-		}
-
-		switch channels {
-		case audio.Mono:
-			fmt.Print(", mono channels\n")
-		case audio.Stereo:
-			fmt.Print(", stereo channels\n")
-		}
-	}
-
 	session.broadcaster.broadcastAudio(session.streamKey, payload, timestamp, chunkType)
 }
 
 // videoData is the full payload (it has the video headers at the beginning of the payload), for easy forwarding
 func (session *Session) onVideoMessage(frameType video.FrameType, codec video.Codec, payload []byte, timestamp uint32, chunkType uint8) {
-	if config.Debug {
-		switch frameType {
-		case video.KeyFrame:
-			fmt.Printf("key frame\n")
-		case video.InterFrame:
-			//fmt.Printf("inter frame")
-		}
-
-		switch codec {
-		case video.H264:
-			fmt.Printf("h264 (avc)\n")
-		case video.SorensonH263:
-			fmt.Printf("sorenson h263\n")
-		}
-	}
-
 	session.broadcaster.broadcastVideo(session.streamKey, payload, timestamp, chunkType)
 }
 
@@ -534,10 +496,18 @@ func (session *Session) onPlay(streamKey string, startTime float64) {
 	session.messageManager.sendPlayStart(infoObject)
 }
 
-func (session *Session) sendAudio(audio []byte, timestamp uint32, chunkType uint8) {
-	session.messageManager.sendAudio(audio, timestamp, chunkType)
+func (session *Session) sendAudio(audio []byte, timestamp uint32) {
+	session.messageManager.sendAudio(audio, timestamp)
 }
 
-func (session *Session) sendVideo(video []byte, timestamp uint32, chunkType uint8) {
-	session.messageManager.sendVideo(video, timestamp, chunkType)
+func (session *Session) sendVideo(video []byte, timestamp uint32) {
+	session.messageManager.sendVideo(video, timestamp)
+}
+
+func (session *Session) isFirstAudioMessage() bool {
+	return session.firstAudioMessage
+}
+
+func (session *Session) setFirstAudioMessage(firstAudioMessage bool) {
+	session.firstAudioMessage = firstAudioMessage
 }

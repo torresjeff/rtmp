@@ -5,8 +5,8 @@ import "fmt"
 // A subscriber gets sent audio, video and data messages that flow in a particular stream (identified with streamKey)
 type Subscriber interface {
 	// TODO: decouple chunkType, the subscriber doesn't need to know this
-	sendAudio(audio []byte, timestamp uint32, chunkType uint8)
-	sendVideo(video []byte, timestamp uint32, chunkType uint8)
+	sendAudio(audio []byte, timestamp uint32)
+	sendVideo(video []byte, timestamp uint32)
 	// TODO: data messages as well
 }
 
@@ -45,7 +45,7 @@ func (b *Broadcaster) broadcastAudio(streamKey string, audio []byte, timestamp u
 		return err
 	}
 	for _, sub := range subscribers {
-		sub.sendAudio(audio, timestamp, chunkType)
+		sub.sendAudio(audio, timestamp)
 	}
 	return nil
 }
@@ -63,7 +63,7 @@ func (b *Broadcaster) broadcastVideo(streamKey string, video []byte, timestamp u
 	}
 
 	for _, sub := range subscribers {
-		sub.sendVideo(video, timestamp, chunkType)
+		sub.sendVideo(video, timestamp)
 	}
 	return nil
 }
