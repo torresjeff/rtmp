@@ -77,7 +77,8 @@ type Session struct {
 	MediaServer
 	sessionID      uint32
 	conn           net.Conn
-	socket         *bufio.ReadWriter
+	socketr        *bufio.Reader
+	socketw        *bufio.Writer
 	clientMetadata clientMetadata
 	broadcaster    *Broadcaster // broadcasts audio/video messages to playback clients subscribed to a stream
 	active         bool         // true if the session is active
@@ -102,14 +103,15 @@ type Session struct {
 
 func NewSession(sessionID uint32, conn *net.Conn, b *Broadcaster) *Session {
 	session := &Session{
-		sessionID:   sessionID,
-		conn:        *conn,
-		socket:      bufio.NewReadWriter(bufio.NewReaderSize(*conn, config.BuffioSize), bufio.NewWriterSize(*conn, config.BuffioSize)),
-		broadcaster: b,
-		active:      true,
+		sessionID:         sessionID,
+		conn:              *conn,
+		socketr:           bufio.NewReaderSize(*conn, config.BuffioSize),
+		socketw: bufio.NewWriterSize(*conn, config.BuffioSize),
+		broadcaster:       b,
+		active:            true,
 		firstAudioMessage: true,
 	}
-	chunkHandler := NewChunkHandler(session.socket)
+	chunkHandler := NewChunkHandler(session.socketr, session.socketw)
 	session.messageManager = NewMessageManager(session, chunkHandler)
 	return session
 }
@@ -166,31 +168,31 @@ func (session *Session) GetID() uint32 {
 }
 
 func (session *Session) send(bytes []byte) error {
-	if _, err := session.socket.Write(bytes); err != nil {
+	if _, err := session.socketw.Write(bytes); err != nil {
 		return err
 	}
-	if err := session.socket.Flush(); err != nil {
+	if err := session.socketw.Flush(); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (session *Session) write(bytes []byte) error {
-	if _, err := session.socket.Write(bytes); err != nil {
+	if _, err := session.socketw.Write(bytes); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (session *Session) flush() error {
-	if err := session.socket.Flush(); err != nil {
+	if err := session.socketw.Flush(); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (session *Session) read(bytes []byte) error {
-	if _, err := session.socket.Read(bytes); err != nil {
+	if _, err := session.socketr.Read(bytes); err != nil {
 		return err
 	}
 	return nil
@@ -419,15 +421,15 @@ func (session *Session) onFCPublish(csID uint32, transactionID float64, args map
 
 func (session *Session) sendOnFCPublish(csID uint32, transactionID float64, streamKey string) {
 	message := generateOnFCPublishMessage(csID, transactionID, streamKey)
-	session.socket.Write(message)
-	session.socket.Flush()
+	session.socketw.Write(message)
+	session.socketw.Flush()
 }
 
 func (session *Session) onCreateStream(csID uint32, transactionID float64, data map[string]interface{}) {
 	// data object could be nil
 	message := generateCreateStreamResponse(csID, transactionID, data)
-	session.socket.Write(message)
-	session.socket.Flush()
+	session.socketw.Write(message)
+	session.socketw.Flush()
 
 	session.messageManager.sendBeginStream(uint32(config.DefaultStreamID))
 }
@@ -451,8 +453,8 @@ func (session *Session) onPublish(csID uint32, streamID uint32, transactionID fl
 	// TODO: the transaction ID for onStatus messages should be 0 as per the spec. But twitch sends the transaction ID that was in the request to "publish".
 	// For now, reply with the same transaction ID.
 	message := generateStatusMessage(transactionID, streamID, infoObject)
-	session.socket.Write(message)
-	session.socket.Flush()
+	session.socketw.Write(message)
+	session.socketw.Flush()
 
 	session.broadcaster.RegisterPublisher(streamKey)
 }
@@ -473,11 +475,13 @@ func (session *Session) onCloseStream(csID uint32, transactionId float64, args m
 // audioData is the full payload (it has the audio headers at the beginning of the payload), for easy forwarding
 // If format == audio.AAC, audioData will contain AACPacketType at index 1
 func (session *Session) onAudioMessage(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, payload []byte, timestamp uint32) {
+	//fmt.Println("received audio")
 	session.broadcaster.broadcastAudio(session.streamKey, payload, timestamp)
 }
 
 // videoData is the full payload (it has the video headers at the beginning of the payload), for easy forwarding
 func (session *Session) onVideoMessage(frameType video.FrameType, codec video.Codec, payload []byte, timestamp uint32) {
+	//fmt.Println("received video")
 	session.broadcaster.broadcastVideo(session.streamKey, payload, timestamp)
 }
 

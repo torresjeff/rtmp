@@ -17,6 +17,14 @@ const (
 	ChunkType3 uint8 = 3
 )
 
+const (
+	// Only Protocol Channel is defined in the spec (csid = 2), the others are defined by me with the idea of being
+	// consistent in sending the same type of data through the same chunk stream id
+	ProtocolChannel uint8 = 2
+	AudioChannel uint8 = 4
+	VideoChannel uint8 = 5
+)
+
 const DefaultMaximumChunkSize = 128
 
 const (
@@ -29,7 +37,8 @@ const (
 
 // Chunk handler is in charge of reading chunk headers and data. It will assemble a message from multiple chunks if it has to.
 type ChunkHandler struct {
-	socket          *bufio.ReadWriter
+	socketr *bufio.Reader
+	socketw *bufio.Writer
 	// The key is the chunk stream ID, and the value is the previous header of that chunk stream ID
 	prevChunkHeader map[uint32]ChunkHeader
 	inChunkSize     uint32
@@ -74,12 +83,13 @@ type ChunkMessageHeader struct {
 	MessageStreamID uint32
 }
 
-func NewChunkHandler(reader *bufio.ReadWriter) *ChunkHandler {
+func NewChunkHandler(reader *bufio.Reader, writer *bufio.Writer) *ChunkHandler {
 	return &ChunkHandler{
-		socket:             reader,
-		inChunkSize:        DefaultMaximumChunkSize,
-		outChunkSize: DefaultMaximumChunkSize,
-		ackSent:            false,
+		socketr:         reader,
+		socketw: writer,
+		inChunkSize:     DefaultMaximumChunkSize,
+		outChunkSize:    DefaultMaximumChunkSize,
+		ackSent:         false,
 		prevChunkHeader: make(map[uint32]ChunkHeader),
 	}
 }
@@ -132,7 +142,7 @@ func (chunkHandler *ChunkHandler) assembleMessage(messageLength uint32) ([]byte,
 	payload := make([]byte, messageLength)
 
 	// Read the initial chunk data that was sent with the first chunk header
-	_, err := io.ReadFull(chunkHandler.socket, payload[:chunkHandler.inChunkSize])
+	_, err := io.ReadFull(chunkHandler.socketr, payload[:chunkHandler.inChunkSize])
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +157,7 @@ func (chunkHandler *ChunkHandler) assembleMessage(messageLength uint32) ([]byte,
 		}
 		// If this chunk is still not the end of the message, then read the whole chunk
 		if bytesRead + chunkHandler.inChunkSize < messageLength {
-			_, err := io.ReadFull(chunkHandler.socket, payload[bytesRead:bytesRead + chunkHandler.inChunkSize])
+			_, err := io.ReadFull(chunkHandler.socketr, payload[bytesRead:bytesRead + chunkHandler.inChunkSize])
 			if err != nil {
 				return nil, err
 			}
@@ -155,7 +165,7 @@ func (chunkHandler *ChunkHandler) assembleMessage(messageLength uint32) ([]byte,
 		} else {
 			// If this is the last chunk of the message, just read the remaining bytes
 			remainingBytes := messageLength - bytesRead
-			_, err := io.ReadFull(chunkHandler.socket, payload[bytesRead:bytesRead + remainingBytes])
+			_, err := io.ReadFull(chunkHandler.socketr, payload[bytesRead:bytesRead + remainingBytes])
 			if err != nil {
 				return nil, err
 			}
@@ -168,7 +178,7 @@ func (chunkHandler *ChunkHandler) assembleMessage(messageLength uint32) ([]byte,
 func (chunkHandler *ChunkHandler) readBasicHeader(header *ChunkHeader) error {
 	basicHeader := &ChunkBasicHeader{}
 
-	b, err := chunkHandler.socket.ReadByte()
+	b, err := chunkHandler.socketr.ReadByte()
 	if err != nil {
 		return err
 	}
@@ -178,16 +188,16 @@ func (chunkHandler *ChunkHandler) readBasicHeader(header *ChunkHeader) error {
 	csid := b & uint8(0x3F)
 
 	if csid == 0 {
-		// if csid is 0, that means we're dealing with chunk basic header 2 (uses 2 bytes)
-		id, err := chunkHandler.socket.ReadByte()
+		// if csid is 0, that means we're dealing with chunk basic header 2 (uses 2 bytes). We've already read one before (b), so read the remaining one.
+		id, err := chunkHandler.socketr.ReadByte()
 		if err != nil {
 			return err
 		}
 		basicHeader.ChunkStreamID = uint32(id) + 64
 	} else if csid == 1 {
-		// if csid is 1, that means we're dealing with chunk basic header 3 (uses 3 bytes).
+		// if csid is 1, that means we're dealing with chunk basic header 3 (uses 3 bytes). We've already read one before (b), so read the remaining two.
 		id := make([]byte, 2)
-		_, err := io.ReadAtLeast(chunkHandler.socket, id, 2)
+		_, err := io.ReadFull(chunkHandler.socketr, id)
 		if err != nil {
 			return err
 		}
@@ -215,7 +225,7 @@ func (chunkHandler *ChunkHandler) ReadChunkData(header ChunkHeader) ([]byte, err
 		payload = messagePayload
 	} else {
 		payload = make([]byte, messageLength)
-		_, err := io.ReadAtLeast(chunkHandler.socket, payload, int(messageLength))
+		_, err := io.ReadFull(chunkHandler.socketr, payload)
 		if err != nil {
 			return nil, err
 		}
@@ -231,7 +241,7 @@ func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) error {
 	case ChunkType0:
 		messageHeader := make([]byte, 11)
 		// A chunk of type 0 has a message header size of 11 bytes, so read 11 bytes into our messageHeader buffer
-		_, err := io.ReadAtLeast(chunkHandler.socket, messageHeader, 11)
+		_, err := io.ReadFull(chunkHandler.socketr, messageHeader)
 		if err != nil {
 			return err
 		}
@@ -250,7 +260,7 @@ func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) error {
 	case ChunkType1:
 		messageHeader := make([]byte, 7)
 		// A chunk of type 1 has a message header size of 7 bytes, so read 7 bytes into our messageHeader buffer
-		_, err := io.ReadAtLeast(chunkHandler.socket, messageHeader, 7)
+		_, err := io.ReadFull(chunkHandler.socketr, messageHeader)
 		if err != nil {
 			return err
 		}
@@ -269,7 +279,7 @@ func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) error {
 	case ChunkType2:
 		messageHeader := make([]byte, 3)
 		// A chunk of type 1 has a message header size of 3 bytes, so read 3 bytes into our messageHeader buffer
-		_, err := io.ReadAtLeast(chunkHandler.socket, messageHeader, 3)
+		_, err := io.ReadFull(chunkHandler.socketr, messageHeader)
 		if err != nil {
 			return err
 		}
@@ -305,7 +315,7 @@ func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) error {
 
 func (chunkHandler *ChunkHandler) readExtendedTimestamp(header *ChunkHeader) error {
 	extendedTimestamp := make([]byte, 4)
-	_, err := io.ReadAtLeast(chunkHandler.socket, extendedTimestamp, 4)
+	_, err := io.ReadFull(chunkHandler.socketr, extendedTimestamp)
 	if err != nil {
 		return err
 	}
@@ -324,40 +334,40 @@ func (chunkHandler *ChunkHandler) updateBytesReceived(i uint32) {
 // TODO: handle errors for all of these functions
 func (chunkHandler *ChunkHandler) sendWindowAckSize(size uint32) {
 	message := generateWindowAckSizeMessage(size)
-	// TODO: wrap the socket in a more user friendly struct that uses Write and Flush in one method
-	chunkHandler.socket.Write(message)
-	chunkHandler.socket.Flush()
+	// TODO: wrap the socketr in a more user friendly struct that uses Write and Flush in one method
+	chunkHandler.socketw.Write(message)
+	chunkHandler.socketw.Flush()
 }
 
 func (chunkHandler *ChunkHandler) sendSetPeerBandWidth(size uint32, limit uint8) {
 	message := generateSetPeerBandwidthMessage(size, limit)
-	chunkHandler.socket.Write(message)
-	chunkHandler.socket.Flush()
+	chunkHandler.socketw.Write(message)
+	chunkHandler.socketw.Flush()
 }
 
 func (chunkHandler *ChunkHandler) sendBeginStream(streamID uint32) {
 	message := generateStreamBeginMessage(streamID)
-	chunkHandler.socket.Write(message)
-	chunkHandler.socket.Flush()
+	chunkHandler.socketw.Write(message)
+	chunkHandler.socketw.Flush()
 }
 
 func (chunkHandler *ChunkHandler) sendSetChunkSize(size uint32) {
 	message := generateSetChunkSizeMessage(size)
-	chunkHandler.socket.Write(message)
-	chunkHandler.socket.Flush()
+	chunkHandler.socketw.Write(message)
+	chunkHandler.socketw.Flush()
 	chunkHandler.outChunkSize = size
 }
 
 func (chunkHandler *ChunkHandler) sendConnectSuccess(csID uint32) {
 	message := generateConnectResponseSuccess(csID)
-	chunkHandler.socket.Write(message)
-	chunkHandler.socket.Flush()
+	chunkHandler.socketw.Write(message)
+	chunkHandler.socketw.Flush()
 }
 
 func (chunkHandler *ChunkHandler) sendAck() {
 	message := generateAckMessage(chunkHandler.bytesReceived)
-	chunkHandler.socket.Write(message)
-	chunkHandler.socket.Flush()
+	chunkHandler.socketw.Write(message)
+	chunkHandler.socketw.Flush()
 	// Reset the number of bytes received
 	chunkHandler.bytesReceived = 0
 	chunkHandler.ackSent = true
@@ -389,7 +399,7 @@ func (chunkHandler *ChunkHandler) SetBandwidth(size uint32, limitType uint8) {
 }
 
 func (chunkHandler *ChunkHandler) send(header []byte, payload []byte) error {
-	_, err := chunkHandler.socket.Write(header)
+	_, err := chunkHandler.socketw.Write(header)
 	if err != nil {
 		return err
 	}
@@ -407,7 +417,7 @@ func (chunkHandler *ChunkHandler) send(header []byte, payload []byte) error {
 		for bytesWritten < payloadLength {
 			if !firstPayloadChunk {
 				// We've already written payload data, so separate it with a chunk type 3 header
-				err = chunkHandler.socket.WriteByte(chunk3Header)
+				err = chunkHandler.socketw.WriteByte(chunk3Header)
 				if err != nil {
 					return err
 				}
@@ -416,7 +426,7 @@ func (chunkHandler *ChunkHandler) send(header []byte, payload []byte) error {
 			}
 			// if the next chunk is still not the end of the message, write chunk size bytes
 			if bytesWritten + chunkSize < payloadLength {
-				_, err = chunkHandler.socket.Write(payload[bytesWritten:bytesWritten + chunkSize])
+				_, err = chunkHandler.socketw.Write(payload[bytesWritten:bytesWritten + chunkSize])
 				if err != nil {
 					return err
 				}
@@ -424,19 +434,19 @@ func (chunkHandler *ChunkHandler) send(header []byte, payload []byte) error {
 			} else {
 				// Write remaining data
 				remainingBytes := payloadLength - bytesWritten
-				_, err = chunkHandler.socket.Write(payload[bytesWritten:bytesWritten + remainingBytes])
+				_, err = chunkHandler.socketw.Write(payload[bytesWritten:bytesWritten + remainingBytes])
 				bytesWritten += remainingBytes
 			}
 		}
 	} else {
 		// No chunking needed
-		_, err := chunkHandler.socket.Write(payload)
+		_, err := chunkHandler.socketw.Write(payload)
 		if err != nil {
 			return err
 		}
 	}
 
-	err = chunkHandler.socket.Flush()
+	err = chunkHandler.socketw.Flush()
 	if err != nil {
 		return err
 	}
@@ -444,6 +454,6 @@ func (chunkHandler *ChunkHandler) send(header []byte, payload []byte) error {
 }
 
 func (chunkHandler *ChunkHandler) sendBytes(bytes []byte) {
-	chunkHandler.socket.Write(bytes)
-	chunkHandler.socket.Flush()
+	chunkHandler.socketw.Write(bytes)
+	chunkHandler.socketw.Flush()
 }

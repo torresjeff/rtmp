@@ -216,7 +216,7 @@ func (m *MessageManager) handleCommandAmf0(csID uint32, streamID uint32, command
 
 		// Start time in seconds
 		startTime, _ := amf0.Decode(payload)
-		byteLength = amf0.Size(streamKey)
+		byteLength = amf0.Size(startTime)
 		payload = payload[byteLength:]
 
 		// TODO: the spec specifies that, the next values should be duration (number), and reset (bool), but VLC doesn't send them
@@ -334,11 +334,8 @@ func (m *MessageManager) sendAudio(audio []byte, timestamp uint32) {
 	// Always send audio as type 0 chunk
 	if isExtendedTimestamp {
 		header = make([]byte, 16)
-		// TODO: determine the chunk stream at run time. Define constants for audio/video stream IDs?
-		// TODO: Should session store the chunk stream ID that it's using to communicate?
-		// TODO: handle cases where csid is greater than 1 byte
 		// fmt = 0 (chunk header - type 0) and chunk stream ID = 4
-		header[0] = 4
+		header[0] = AudioChannel
 
 		// since we have an extended timestamp, fill the timestamp with 0xFFFFFF
 		header[1] = 0xFF
@@ -361,11 +358,8 @@ func (m *MessageManager) sendAudio(audio []byte, timestamp uint32) {
 	} else {
 		header = make([]byte, 12)
 
-		// TODO: determine the chunk stream at run time
-		// TODO: Should session store the chunk stream ID that it's using to communicate?
-		// TODO: handle cases where csid is greater than 1 byte
-		// fmt = 0 (chunk header - type 0) and chunk stream ID = 4
-		header[0] = 4
+		// fmt = 0 (chunk header - type 0) and chunk stream ID = 4 (audio)
+		header[0] = AudioChannel
 
 		// timestamp
 		header[1] = byte((timestamp >> 16) & 0xFF)
@@ -383,7 +377,8 @@ func (m *MessageManager) sendAudio(audio []byte, timestamp uint32) {
 		// TODO: make stream ID constant for audio/video messages
 		binary.LittleEndian.PutUint32(header[8:], 1)
 	}
-	fmt.Println("audio timestamp =", timestamp)
+	//fmt.Println("audio timestamp =", timestamp)
+	//fmt.Println("audio header:\n", hex.Dump(header))
 	// The chunk handler will divide these into more chunks if the payload is greater than the chunk size
 	m.chunkHandler.send(header, audio)
 }
@@ -396,11 +391,8 @@ func (m *MessageManager) sendVideo(video []byte, timestamp uint32) {
 	// Always send video as type 0 chunk for playback clients
 	if isExtendedTimestamp {
 		header = make([]byte, 16)
-		// TODO: determine the chunk stream at run time
-		// TODO: Should session store the chunk stream ID that it's using to communicate?
-		// TODO: handle cases where csid is greater than 1 byte
-		// fmt = 0 (chunk header - type 0) and chunk stream ID = 5
-		header[0] = 5
+		// fmt = 0 (chunk header - type 0) and chunk stream ID = 5 (video)
+		header[0] = VideoChannel
 
 		// since we have an extended timestamp, fill the timestamp with 0xFFFFFF
 		header[1] = 0xFF
@@ -422,12 +414,8 @@ func (m *MessageManager) sendVideo(video []byte, timestamp uint32) {
 		binary.LittleEndian.PutUint32(header[12:], 1)
 	} else {
 		header = make([]byte, 12)
-
-		// TODO: determine the chunk stream at run time
-		// TODO: Should session store the chunk stream ID that it's using to communicate?
-		// TODO: handle cases where csid is greater than 1 byte
-		// fmt = 0 (chunk header - type 0) and chunk stream ID = 4
-		header[0] = 4
+		// fmt = 0 (chunk header - type 0) and chunk stream ID = 5 (video)
+		header[0] = VideoChannel
 
 		// timestamp
 		header[1] = byte((timestamp >> 16) & 0xFF)
@@ -445,7 +433,8 @@ func (m *MessageManager) sendVideo(video []byte, timestamp uint32) {
 		// TODO: make stream ID constant for audio/video messages
 		binary.LittleEndian.PutUint32(header[8:], 1)
 	}
-	fmt.Println("video timestamp =", timestamp)
+	//fmt.Println("video timestamp =", timestamp)
+	//fmt.Println("video header:\n", hex.Dump(header))
 	m.chunkHandler.send(header, video)
 }
 
