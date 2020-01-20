@@ -140,6 +140,8 @@ func (session *Session) Run() error {
 			if config.Debug {
 				fmt.Println("session: destroying publisher")
 			}
+			// Broadcast end of stream
+			session.broadcaster.BroadcastEndOfStream(session.streamKey)
 			session.broadcaster.DestroyPublisher(session.streamKey)
 		}
 	}()
@@ -472,10 +474,6 @@ func (session *Session) onFCUnpublish(args map[string]interface{}, streamKey str
 }
 
 func (session *Session) onDeleteStream(args map[string]interface{}, streamID float64) {
-	// Send end of stream to playback clients
-	if session.isPublisher {
-		session.broadcaster.BroadcastEndOfStream(session.streamKey)
-	}
 }
 
 func (session *Session) sendEndOfStream() {
