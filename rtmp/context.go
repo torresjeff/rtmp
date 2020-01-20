@@ -3,6 +3,8 @@ package rtmp
 import (
 	"errors"
 	"fmt"
+	"github.com/torresjeff/rtmp-server/config"
+	"sync"
 )
 
 type ContextStore interface {
@@ -12,13 +14,16 @@ type ContextStore interface {
 	GetSubscribersForStream(streamKey string) ([]Subscriber, error)
 	SetAvcSequenceHeaderForPublisher(streamKey string, payload []byte)
 	GetAvcSequenceHeaderForPublisher(streamKey string) []byte
+	DestroySubscriber(streamKey string, sessionID uint32) error
 }
 
 type InMemoryContext struct {
 	ContextStore
-	subscribers      map[string][]Subscriber
-	numberOfSessions uint32
+	subMutex               sync.RWMutex
+	subscribers            map[string][]Subscriber
+	avcMutex               sync.RWMutex
 	avcSequenceHeaderCache map[string][]byte
+	numberOfSessions       uint32
 }
 
 var StreamNotFound error = errors.New("StreamNotFound")
@@ -33,13 +38,19 @@ func NewInMemoryContext() *InMemoryContext {
 // Registers the session in the broadcaster to keep a reference to all open subscribers
 func (c *InMemoryContext) RegisterPublisher(streamKey string) error {
 	// Assume there will be a small amount of subscribers (ie. a few instances of ffmpeg that transcode our audio/video)
+	c.subMutex.Lock()
 	c.subscribers[streamKey] = make([]Subscriber, 0, 5)
-	fmt.Println("registered publisher with stream key", streamKey)
+	if config.Debug {
+		fmt.Println("context: registered publisher with stream key", streamKey)
+	}
 	c.numberOfSessions++
+	c.subMutex.Unlock()
 	return nil
 }
 
 func (c *InMemoryContext) DestroyPublisher(streamKey string) error {
+	c.subMutex.Lock()
+	defer c.subMutex.Unlock()
 	if _, exists := c.subscribers[streamKey]; exists {
 		delete(c.subscribers, streamKey)
 		c.numberOfSessions--
@@ -48,6 +59,8 @@ func (c *InMemoryContext) DestroyPublisher(streamKey string) error {
 }
 
 func (c *InMemoryContext) RegisterSubscriber(streamKey string, subscriber Subscriber) error {
+	c.subMutex.Lock()
+	defer c.subMutex.Unlock()
 	// If a stream with the key exists, then register the subscriber
 	if _, exists := c.subscribers[streamKey]; exists {
 		c.subscribers[streamKey] = append(c.subscribers[streamKey], subscriber)
@@ -59,7 +72,8 @@ func (c *InMemoryContext) RegisterSubscriber(streamKey string, subscriber Subscr
 
 func (c *InMemoryContext) GetSubscribersForStream(streamKey string) ([]Subscriber, error) {
 	// We could add a cache check if this context got the subscribers from a DB rather than from memory
-
+	c.subMutex.RLock()
+	defer c.subMutex.RUnlock()
 	// If a stream with the key exists, then return its subscribers
 	if subscribers, exists := c.subscribers[streamKey]; exists {
 		return subscribers, nil
@@ -68,11 +82,33 @@ func (c *InMemoryContext) GetSubscribersForStream(streamKey string) ([]Subscribe
 	return nil, StreamNotFound
 }
 
+func (c *InMemoryContext) DestroySubscriber(streamKey string, sessionID uint32) error {
+	c.subMutex.Lock()
+	defer c.subMutex.Unlock()
+	subscribers, exists := c.subscribers[streamKey]
+	if !exists {
+		return nil
+	}
+	numberOfSubs := len(subscribers)
+	for i, sub := range subscribers {
+		if sub.GetID() == sessionID {
+			// Swap the subscriber we're deleting with the last element, to avoid having to delete (more efficient)
+			subscribers[i] = subscribers[numberOfSubs - 1]
+			c.subscribers[streamKey] = subscribers[:numberOfSubs-1]
+		}
+	}
+	return nil
+}
+
 func (c *InMemoryContext) SetAvcSequenceHeaderForPublisher(streamKey string, payload []byte) {
+	c.avcMutex.Lock()
 	c.avcSequenceHeaderCache[streamKey] = payload
+	c.avcMutex.Unlock()
 }
 
 func (c *InMemoryContext) GetAvcSequenceHeaderForPublisher(streamKey string) []byte {
+	c.avcMutex.RLock()
+	defer c.avcMutex.RUnlock()
 	// TODO: handle cases where cache doesn't exist
 	return c.avcSequenceHeaderCache[streamKey]
 }

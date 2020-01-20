@@ -4,10 +4,10 @@ import "fmt"
 
 // A subscriber gets sent audio, video and data messages that flow in a particular stream (identified with streamKey)
 type Subscriber interface {
-	// TODO: decouple chunkType, the subscriber doesn't need to know this
 	sendAudio(audio []byte, timestamp uint32)
 	sendVideo(video []byte, timestamp uint32)
-	// TODO: data messages as well
+	// TODO: data messages as well?
+	GetID() uint32
 }
 
 type Broadcaster struct {
@@ -25,10 +25,12 @@ func (b *Broadcaster) RegisterPublisher(streamKey string) error {
 }
 
 func (b *Broadcaster) DestroyPublisher(streamKey string) error {
+	// TODO: send stop message to all subscribers
 	return b.context.DestroyPublisher(streamKey)
 }
 
 func (b* Broadcaster) RegisterSubscriber(streamKey string, subscriber Subscriber) error {
+
 	return b.context.RegisterSubscriber(streamKey, subscriber)
 }
 
@@ -66,4 +68,16 @@ func (b *Broadcaster) broadcastVideo(streamKey string, video []byte, timestamp u
 		sub.sendVideo(video, timestamp)
 	}
 	return nil
+}
+
+func (b *Broadcaster) DestroySubscriber(streamKey string, sessionID uint32) error {
+	return b.context.DestroySubscriber(streamKey, sessionID)
+}
+
+func (b *Broadcaster) SetAvcSequenceHeaderForPublisher(streamKey string, payload []byte) {
+	b.context.SetAvcSequenceHeaderForPublisher(streamKey, payload)
+}
+
+func (b *Broadcaster) GetAvcSequenceHeaderForPublisher(streamKey string) []byte {
+	return b.context.GetAvcSequenceHeaderForPublisher(streamKey)
 }

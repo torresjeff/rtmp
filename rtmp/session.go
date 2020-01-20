@@ -99,7 +99,8 @@ type Session struct {
 	typeOfStream   string
 	streamKey      string // used to identify user
 	publishingType string
-	firstAudioMessage bool
+	isPublisher bool
+	isPlayer bool
 }
 
 func NewSession(sessionID uint32, conn *net.Conn, b *Broadcaster, c ContextStore) *Session {
@@ -111,7 +112,6 @@ func NewSession(sessionID uint32, conn *net.Conn, b *Broadcaster, c ContextStore
 		context: c,
 		broadcaster:       b,
 		active:            true,
-		firstAudioMessage: true,
 	}
 	chunkHandler := NewChunkHandler(session.socketr, session.socketw)
 	session.messageManager = NewMessageManager(session, chunkHandler)
@@ -123,11 +123,26 @@ func (session *Session) Run() error {
 	// Perform handshake
 	err := session.Handshake()
 	if err != nil {
-		session.broadcaster.DestroyPublisher(session.streamKey)
 		session.conn.Close()
 		fmt.Println("session: error in handshake")
 		return err
 	}
+
+	defer func() {
+		// Remove the session from the context
+		if session.isPlayer {
+			if config.Debug {
+				fmt.Println("session: destroying subscriber")
+			}
+			session.broadcaster.DestroySubscriber(session.streamKey, session.sessionID)
+		}
+		if session.isPublisher {
+			if config.Debug {
+				fmt.Println("session: destroying publisher")
+			}
+			session.broadcaster.DestroyPublisher(session.streamKey)
+		}
+	}()
 
 	if config.Debug {
 		fmt.Println("Handshake completed successfully")
@@ -137,10 +152,10 @@ func (session *Session) Run() error {
 	for {
 		if session.active {
 			if err = session.messageManager.nextMessage(); err == io.EOF {
-				session.broadcaster.DestroyPublisher(session.streamKey)
+				fmt.Println("session: closing connection")
 				return session.conn.Close()
 			} else if err != nil {
-				session.broadcaster.DestroyPublisher(session.streamKey)
+				fmt.Println("session: closing connection")
 				session.conn.Close()
 				return err
 			}
@@ -149,6 +164,10 @@ func (session *Session) Run() error {
 			return session.conn.Close()
 		}
 	}
+}
+
+func (session *Session) GetID() uint32 {
+	return session.sessionID
 }
 
 func (session *Session) Handshake() error {
@@ -164,10 +183,6 @@ func (session *Session) Handshake() error {
 	}
 
 	return nil
-}
-
-func (session *Session) GetID() uint32 {
-	return session.sessionID
 }
 
 func (session *Session) send(bytes []byte) error {
@@ -266,7 +281,6 @@ func (session *Session) onConnect(csID uint32, transactionID float64, data map[s
 		// Initiate connect sequence
 		// As per the specification, after the connect command, the server sends the protocol message Window Acknowledgment Size
 		session.messageManager.sendWindowAckSize(config.DefaultClientWindowSize)
-		// TODO: connect to the app (whatever that is)
 		// After sending the window ack size message, the server sends the set peer bandwidth message
 		session.messageManager.sendSetPeerBandWidth(config.DefaultClientWindowSize, LimitDynamic)
 		// Send the User Control Message to begin stream with stream ID = DefaultPublishStream (which is 0)
@@ -284,6 +298,7 @@ func (session *Session) onConnect(csID uint32, transactionID float64, data map[s
 }
 
 func (session *Session) storeMetadata(metadata map[string]interface{}) {
+	fmt.Printf("storeMetadata: %+v\n", metadata)
 	// Playback clients send other properties in the command object, such as what audio/video codecs the client supports
 	session.app = metadata["app"].(string)
 	if _, exists := metadata["flashVer"]; exists {
@@ -459,13 +474,12 @@ func (session *Session) onPublish(csID uint32, streamID uint32, transactionID fl
 	session.socketw.Write(message)
 	session.socketw.Flush()
 
+	session.isPublisher = true
 	session.broadcaster.RegisterPublisher(streamKey)
 }
 
 func (session *Session) onFCUnpublish(csID uint32, transactionID float64, args map[string]interface{}, streamKey string) {
 	// TODO: Finish broadcasting the messages to every viewer before destroying the session,
-	// if we delete the session from the broadcaster, this may result in a nil pointer exception
-	session.broadcaster.DestroyPublisher(session.streamKey)
 }
 
 func (session *Session) onDeleteStream(csID uint32, transactionId float64, args map[string]interface{}, streamID float64) {
@@ -486,12 +500,13 @@ func (session *Session) onAudioMessage(format audio.Format, sampleRate audio.Sam
 func (session *Session) onVideoMessage(frameType video.FrameType, codec video.Codec, payload []byte, timestamp uint32) {
 	// cache avc sequence header to send to playback clients
 	if codec == video.H264 && video.AVCPacketType(payload[1]) == video.AVCSequenceHeader {
-		session.context.SetAvcSequenceHeaderForPublisher(session.streamKey, payload)
+		session.broadcaster.SetAvcSequenceHeaderForPublisher(session.streamKey, payload)
 	}
 	session.broadcaster.broadcastVideo(session.streamKey, payload, timestamp)
 }
 
 func (session *Session) onPlay(streamKey string, startTime float64) {
+	session.streamKey = streamKey
 
 	infoObject := map[string]interface{}{
 		// TODO: Send reset if the client sent it in the request
@@ -501,9 +516,12 @@ func (session *Session) onPlay(streamKey string, startTime float64) {
 	}
 	session.messageManager.sendPlayStart(infoObject)
 	session.messageManager.sendRtmpSampleAccess(true, true)
-	payload := session.context.GetAvcSequenceHeaderForPublisher(streamKey)
-	fmt.Printf("sending video onPlay, sequence header with timestamp: 0, body size: %d", len(payload))
+	payload := session.broadcaster.GetAvcSequenceHeaderForPublisher(streamKey)
+	if config.Debug {
+		fmt.Printf("sending video onPlay, sequence header with timestamp: 0, body size: %d\n", len(payload))
+	}
 	session.messageManager.sendVideo(payload, 0)
+	session.isPlayer = true
 	err := session.broadcaster.RegisterSubscriber(streamKey, session)
 	if err != nil {
 		// TODO: send failure response to client
@@ -516,12 +534,4 @@ func (session *Session) sendAudio(audio []byte, timestamp uint32) {
 
 func (session *Session) sendVideo(video []byte, timestamp uint32) {
 	session.messageManager.sendVideo(video, timestamp)
-}
-
-func (session *Session) isFirstAudioMessage() bool {
-	return session.firstAudioMessage
-}
-
-func (session *Session) setFirstAudioMessage(firstAudioMessage bool) {
-	session.firstAudioMessage = firstAudioMessage
 }
