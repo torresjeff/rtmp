@@ -504,7 +504,6 @@ func generateDataMessageRtmpSampleAccess(audio bool, video bool) []byte {
 	videoTrue, _ := amf0.Encode(video)
 	message = append(message, videoTrue...)
 
-	fmt.Println("Rtmp message size:", len(message))
 	return message
 }
 

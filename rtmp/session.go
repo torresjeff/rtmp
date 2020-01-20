@@ -122,7 +122,9 @@ func NewSession(sessionID uint32, conn *net.Conn, b *Broadcaster, c ContextStore
 func (session *Session) Run() error {
 	// Perform handshake
 	err := session.Handshake()
-	if err != nil {
+	if err == io.EOF {
+		return session.conn.Close()
+	} else if err != nil {
 		session.conn.Close()
 		fmt.Println("session: error in handshake")
 		return err
@@ -492,6 +494,10 @@ func (session *Session) onCloseStream(csID uint32, transactionId float64, args m
 // audioData is the full payload (it has the audio headers at the beginning of the payload), for easy forwarding
 // If format == audio.AAC, audioData will contain AACPacketType at index 1
 func (session *Session) onAudioMessage(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, payload []byte, timestamp uint32) {
+	// Cache aac sequence header to send to play back clients
+	if format == audio.AAC && audio.AACPacketType(payload[1]) == audio.AACSequenceHeader {
+		session.broadcaster.SetAacSequenceHeaderForPublisher(session.streamKey, payload)
+	}
 	//fmt.Println("received audio")
 	session.broadcaster.broadcastAudio(session.streamKey, payload, timestamp)
 }
@@ -516,11 +522,18 @@ func (session *Session) onPlay(streamKey string, startTime float64) {
 	}
 	session.messageManager.sendPlayStart(infoObject)
 	session.messageManager.sendRtmpSampleAccess(true, true)
-	payload := session.broadcaster.GetAvcSequenceHeaderForPublisher(streamKey)
+	avcSeqHeader := session.broadcaster.GetAvcSequenceHeaderForPublisher(streamKey)
 	if config.Debug {
-		fmt.Printf("sending video onPlay, sequence header with timestamp: 0, body size: %d\n", len(payload))
+		fmt.Printf("sending video onPlay, sequence header with timestamp: 0, body size: %d\n", len(avcSeqHeader))
 	}
-	session.messageManager.sendVideo(payload, 0)
+	session.messageManager.sendVideo(avcSeqHeader, 0)
+
+	aacSeqHeader := session.broadcaster.GetAacSequenceHeaderForPublisher(streamKey)
+	if config.Debug {
+		fmt.Printf("sending audio onPlay, sequence header with timestamp: 0, body size: %d\n", len(aacSeqHeader))
+	}
+	session.messageManager.sendAudio(aacSeqHeader, 0)
+
 	session.isPlayer = true
 	err := session.broadcaster.RegisterSubscriber(streamKey, session)
 	if err != nil {

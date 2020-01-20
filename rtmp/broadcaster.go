@@ -81,3 +81,11 @@ func (b *Broadcaster) SetAvcSequenceHeaderForPublisher(streamKey string, payload
 func (b *Broadcaster) GetAvcSequenceHeaderForPublisher(streamKey string) []byte {
 	return b.context.GetAvcSequenceHeaderForPublisher(streamKey)
 }
+
+func (b *Broadcaster) SetAacSequenceHeaderForPublisher(streamKey string, payload []byte) {
+	b.context.SetAacSequenceHeaderForPublisher(streamKey, payload)
+}
+
+func (b *Broadcaster) GetAacSequenceHeaderForPublisher(streamKey string) []byte {
+	return b.context.GetAacSequenceHeaderForPublisher(streamKey)
+}

@@ -15,14 +15,17 @@ type ContextStore interface {
 	SetAvcSequenceHeaderForPublisher(streamKey string, payload []byte)
 	GetAvcSequenceHeaderForPublisher(streamKey string) []byte
 	DestroySubscriber(streamKey string, sessionID uint32) error
+	SetAacSequenceHeaderForPublisher(key string, payload []byte)
+	GetAacSequenceHeaderForPublisher(key string) []byte
 }
 
 type InMemoryContext struct {
 	ContextStore
 	subMutex               sync.RWMutex
 	subscribers            map[string][]Subscriber
-	avcMutex               sync.RWMutex
+	seqMutex               sync.RWMutex
 	avcSequenceHeaderCache map[string][]byte
+	aacSequenceHeaderCache map[string][]byte
 	numberOfSessions       uint32
 }
 
@@ -32,6 +35,7 @@ func NewInMemoryContext() *InMemoryContext {
 	return &InMemoryContext{
 		subscribers: make(map[string][]Subscriber),
 		avcSequenceHeaderCache: make(map[string][]byte),
+		aacSequenceHeaderCache: make(map[string][]byte),
 	}
 }
 
@@ -101,14 +105,27 @@ func (c *InMemoryContext) DestroySubscriber(streamKey string, sessionID uint32) 
 }
 
 func (c *InMemoryContext) SetAvcSequenceHeaderForPublisher(streamKey string, payload []byte) {
-	c.avcMutex.Lock()
+	c.seqMutex.Lock()
 	c.avcSequenceHeaderCache[streamKey] = payload
-	c.avcMutex.Unlock()
+	c.seqMutex.Unlock()
 }
 
 func (c *InMemoryContext) GetAvcSequenceHeaderForPublisher(streamKey string) []byte {
-	c.avcMutex.RLock()
-	defer c.avcMutex.RUnlock()
+	c.seqMutex.RLock()
+	defer c.seqMutex.RUnlock()
 	// TODO: handle cases where cache doesn't exist
 	return c.avcSequenceHeaderCache[streamKey]
+}
+
+func (c *InMemoryContext) SetAacSequenceHeaderForPublisher(streamKey string, payload []byte) {
+	c.seqMutex.Lock()
+	c.aacSequenceHeaderCache[streamKey] = payload
+	c.seqMutex.Unlock()
+}
+
+func (c *InMemoryContext) GetAacSequenceHeaderForPublisher(streamKey string) []byte {
+	c.seqMutex.RLock()
+	defer c.seqMutex.RUnlock()
+	// TODO: handle cases where cache doesn't exist
+	return c.aacSequenceHeaderCache[streamKey]
 }
