@@ -2,8 +2,8 @@ package rtmp
 
 import (
 	"fmt"
-	"github.com/torresjeff/rtmp-server/config"
-	"github.com/torresjeff/rtmp-server/rand"
+	"github.com/torresjeff/rtmp/config"
+	"github.com/torresjeff/rtmp/rand"
 	"net"
 )
 

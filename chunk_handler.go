@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/pkg/errors"
-	"github.com/torresjeff/rtmp-server/config"
+	"github.com/torresjeff/rtmp/config"
 	"io"
 )
 

@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/torresjeff/rtmp-server/config"
-	"github.com/torresjeff/rtmp-server/rtmp"
+	"github.com/torresjeff/rtmp"
+	"github.com/torresjeff/rtmp/config"
 	"log"
 )
 
