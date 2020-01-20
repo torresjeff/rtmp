@@ -80,7 +80,6 @@ type Session struct {
 	socketr        *bufio.Reader
 	socketw        *bufio.Writer
 	clientMetadata clientMetadata
-	context ContextStore
 	broadcaster    *Broadcaster // broadcasts audio/video messages to playback clients subscribed to a stream
 	active         bool         // true if the session is active
 
@@ -103,13 +102,12 @@ type Session struct {
 	isPlayer bool
 }
 
-func NewSession(sessionID uint32, conn *net.Conn, b *Broadcaster, c ContextStore) *Session {
+func NewSession(sessionID uint32, conn *net.Conn, b *Broadcaster) *Session {
 	session := &Session{
 		sessionID:         sessionID,
 		conn:              *conn,
 		socketr:           bufio.NewReaderSize(*conn, config.BuffioSize),
 		socketw: bufio.NewWriterSize(*conn, config.BuffioSize),
-		context: c,
 		broadcaster:       b,
 		active:            true,
 	}
@@ -514,25 +512,26 @@ func (session *Session) onVideoMessage(frameType video.FrameType, codec video.Co
 func (session *Session) onPlay(streamKey string, startTime float64) {
 	session.streamKey = streamKey
 
-	infoObject := map[string]interface{}{
-		// TODO: Send reset if the client sent it in the request
-		"level": "status",
-		"code": "NetStream.Play.Start",
-		"description": "Playing stream for live_user_<x>",
+	if !session.broadcaster.StreamExists(streamKey) {
+		session.messageManager.sendStatusMessage("error", "NetStream.Play.StreamNotFound", "not_found", streamKey)
+		return
 	}
-	session.messageManager.sendPlayStart(infoObject)
-	session.messageManager.sendRtmpSampleAccess(true, true)
+	session.messageManager.sendStatusMessage("status", "NetStream.Play.Start", "Playing stream for live_user_<x>")
 	avcSeqHeader := session.broadcaster.GetAvcSequenceHeaderForPublisher(streamKey)
 	if config.Debug {
 		fmt.Printf("sending video onPlay, sequence header with timestamp: 0, body size: %d\n", len(avcSeqHeader))
 	}
-	session.messageManager.sendVideo(avcSeqHeader, 0)
+	if avcSeqHeader != nil {
+		session.messageManager.sendVideo(avcSeqHeader, 0)
+	}
 
 	aacSeqHeader := session.broadcaster.GetAacSequenceHeaderForPublisher(streamKey)
 	if config.Debug {
 		fmt.Printf("sending audio onPlay, sequence header with timestamp: 0, body size: %d\n", len(aacSeqHeader))
 	}
-	session.messageManager.sendAudio(aacSeqHeader, 0)
+	if aacSeqHeader != nil {
+		session.messageManager.sendAudio(aacSeqHeader, 0)
+	}
 
 	session.isPlayer = true
 	err := session.broadcaster.RegisterSubscriber(streamKey, session)

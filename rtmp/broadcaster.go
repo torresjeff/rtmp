@@ -30,10 +30,12 @@ func (b *Broadcaster) DestroyPublisher(streamKey string) error {
 }
 
 func (b* Broadcaster) RegisterSubscriber(streamKey string, subscriber Subscriber) error {
-
 	return b.context.RegisterSubscriber(streamKey, subscriber)
 }
 
+func (b *Broadcaster) StreamExists(streamKey string) bool {
+	return b.context.StreamExists(streamKey)
+}
 
 
 func (b *Broadcaster) broadcastAudio(streamKey string, audio []byte, timestamp uint32) error {

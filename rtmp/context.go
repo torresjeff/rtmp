@@ -12,9 +12,10 @@ type ContextStore interface {
 	DestroyPublisher(streamKey string) error
 	RegisterSubscriber(streamKey string, subscriber Subscriber) error
 	GetSubscribersForStream(streamKey string) ([]Subscriber, error)
+	DestroySubscriber(streamKey string, sessionID uint32) error
+	StreamExists(streamKey string) bool
 	SetAvcSequenceHeaderForPublisher(streamKey string, payload []byte)
 	GetAvcSequenceHeaderForPublisher(streamKey string) []byte
-	DestroySubscriber(streamKey string, sessionID uint32) error
 	SetAacSequenceHeaderForPublisher(key string, payload []byte)
 	GetAacSequenceHeaderForPublisher(key string) []byte
 }
@@ -72,6 +73,13 @@ func (c *InMemoryContext) RegisterSubscriber(streamKey string, subscriber Subscr
 	}
 	// If no stream was found with that stream key, send an error
 	return StreamNotFound
+}
+
+func (c* InMemoryContext) StreamExists(streamKey string) bool {
+	c.subMutex.RLock()
+	defer c.subMutex.RUnlock()
+	_, exists := c.subscribers[streamKey]
+	return exists
 }
 
 func (c *InMemoryContext) GetSubscribersForStream(streamKey string) ([]Subscriber, error) {

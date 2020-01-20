@@ -475,6 +475,20 @@ func (m *MessageManager) sendRtmpSampleAccess(audio bool, video bool) {
 	m.chunkHandler.sendBytes(message)
 }
 
+func (m *MessageManager) sendStatusMessage(level string, code string, description string, optionalDetails ...string) {
+	infoObject := map[string]interface{}{
+		"level": level,
+		"code": code,
+		"description": description,
+	}
+	if len(optionalDetails) > 0 && optionalDetails[0] != "" {
+		infoObject["details"] = optionalDetails[0]
+	}
+
+	message := generateStatusMessage(0, 0, infoObject)
+	m.chunkHandler.sendBytes(message)
+}
+
 func generateDataMessageRtmpSampleAccess(audio bool, video bool) []byte {
 	message := make([]byte, 12)
 

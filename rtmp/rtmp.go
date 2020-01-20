@@ -49,7 +49,7 @@ func (server *Server) Run() error {
 		}
 
 		// Create a new session from the new connection (basically a wrapper of the connection + other data)
-		sess := NewSession(rand.GenerateSessionId(), &conn, broadcaster, context)
+		sess := NewSession(rand.GenerateSessionId(), &conn, broadcaster)
 
 		go func () {
 			err := sess.Run()
