@@ -212,7 +212,7 @@ func (m *MessageManager) handleCommandAmf0(csID uint32, streamID uint32, command
 		// - append: The stream is published and the data is appended to a file. If no file is found, it is created.
 		// - live: Live data is published without recording it in a file.
 		publishingType, _ := amf0.Decode(payload)
-		m.session.onPublish(csID, streamID, transactionId, commandObject, streamKey.(string), publishingType.(string))
+		m.session.onPublish(transactionId, commandObject, streamKey.(string), publishingType.(string))
 	case "play":
 		streamKey, _ := amf0.Decode(payload)
 		byteLength = amf0.Size(streamKey)
@@ -227,12 +227,12 @@ func (m *MessageManager) handleCommandAmf0(csID uint32, streamID uint32, command
 		m.session.onPlay(streamKey.(string), startTime.(float64))
 	case "FCUnpublish":
 		streamKey, _ := amf0.Decode(payload)
-		m.session.onFCUnpublish(csID, transactionId, commandObject, streamKey.(string))
+		m.session.onFCUnpublish(commandObject, streamKey.(string))
 	case "closeStream":
 		m.session.onCloseStream(csID, transactionId, commandObject)
 	case "deleteStream":
 		streamID, _ := amf0.Decode(payload)
-		m.session.onDeleteStream(csID, transactionId, commandObject, streamID.(float64))
+		m.session.onDeleteStream(commandObject, streamID.(float64))
 	default:
 		fmt.Println("message manager: received command " + commandName + ", but couldn't handle it because no implementation is defined")
 	}

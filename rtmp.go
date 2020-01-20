@@ -34,7 +34,7 @@ func (server *Server) Run() error {
 	}
 
 	// broadcaster stores information about all running subscribers in a global object.
-	// TODO: allow specifying broadcaster store as a parameter when creating the server
+	// TODO: allow specifying context store as a parameter when creating the server
 	context := NewInMemoryContext()
 	broadcaster := NewBroadcaster(context)
 	// Loop infinitely, accepting any incoming connection. Every new connection will create a new session.

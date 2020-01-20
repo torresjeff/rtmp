@@ -186,6 +186,7 @@ func (chunkHandler *ChunkHandler) readBasicHeader(header *ChunkHeader) (n int, e
 
 func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) (n int, err error) {
 	csid := header.BasicHeader.ChunkStreamID
+	_, prevChunkExists := chunkHandler.prevChunkHeader[csid]
 	mh := &ChunkMessageHeader{}
 	switch header.BasicHeader.FMT {
 	//0                   1                   2                   3
@@ -242,7 +243,9 @@ func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) (n int,
 		// Message type ID is only 1 byte, so read the byte directly
 		mh.MessageTypeID = uint8(messageHeader[6])
 		// Chunk type 1 message headers don't have a message stream ID. This chunk takes the same message stream ID as the previous chunk.
-		mh.MessageStreamID = chunkHandler.prevChunkHeader[csid].MessageHeader.MessageStreamID
+		if prevChunkExists {
+			mh.MessageStreamID = chunkHandler.prevChunkHeader[csid].MessageHeader.MessageStreamID
+		}
 
 		header.MessageHeader = mh
 		return n, err
@@ -261,28 +264,25 @@ func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) (n int,
 			return n, err
 		}
 		// Since the timestamp delta field is 3 bytes long, to be able to interpret it as a 32-bit uint we have to add 1 byte at the beginning (3 + 1 byte = 4 bytes == 32-bits)
-		// NOTE: this uses the TimestampDelta field, not the Timestamp field (which is only used for chunk type 0)
 		mh.Timestamp = binary.BigEndian.Uint32(append([]byte{0x00}, messageHeader[:3]...))
-		// Chunk type 2 message headers don't have a message length. This chunk takes the same message length as the previous chunk.
-		mh.MessageLength = chunkHandler.prevChunkHeader[csid].MessageHeader.MessageLength
-		// Chunk type 2 message headers don't have a message stream ID. This chunk takes the same message stream ID as the previous chunk.
-		mh.MessageStreamID = chunkHandler.prevChunkHeader[csid].MessageHeader.MessageStreamID
-		// Chunk type 2 message headers don't have a message type ID. This chunk takes the same message type ID as the previous chunk.
-		mh.MessageTypeID = chunkHandler.prevChunkHeader[csid].MessageHeader.MessageTypeID
+		if prevChunkExists {
+			// Chunk type 2 message headers don't have a message length. This chunk takes the same message length as the previous chunk.
+			mh.MessageLength = chunkHandler.prevChunkHeader[csid].MessageHeader.MessageLength
+			// Chunk type 2 message headers don't have a message stream ID. This chunk takes the same message stream ID as the previous chunk.
+			mh.MessageStreamID = chunkHandler.prevChunkHeader[csid].MessageHeader.MessageStreamID
+			// Chunk type 2 message headers don't have a message type ID. This chunk takes the same message type ID as the previous chunk.
+			mh.MessageTypeID = chunkHandler.prevChunkHeader[csid].MessageHeader.MessageTypeID
+		}
 
 		header.MessageHeader = mh
 		return n, err
 	case ChunkType3:
 		// Chunk type 3 message headers don't have any data. All values are taken from the previous header.
-		// As per the spec: If a Type 3 chunk follows a Type 0 chunk, then the timestamp delta for this Type 3 chunk is the same as the timestamp of the Type 0 chunk.
-		//if chunkHandler.prevChunkHeader[csid].BasicHeader.FMT == ChunkType0 {
-		//	mh.TimestampDelta = chunkHandler.prevChunkHeader[csid].MessageHeader.Timestamp
-		//} else {
-		//	mh.TimestampDelta = chunkHandler.prevChunkHeader[csid].MessageHeader.TimestampDelta
-		//}
-		mh.MessageLength = chunkHandler.prevChunkHeader[csid].MessageHeader.MessageLength
-		mh.MessageTypeID = chunkHandler.prevChunkHeader[csid].MessageHeader.MessageTypeID
-		mh.MessageStreamID = chunkHandler.prevChunkHeader[csid].MessageHeader.MessageStreamID
+		if prevChunkExists {
+			mh.MessageLength = chunkHandler.prevChunkHeader[csid].MessageHeader.MessageLength
+			mh.MessageTypeID = chunkHandler.prevChunkHeader[csid].MessageHeader.MessageTypeID
+			mh.MessageStreamID = chunkHandler.prevChunkHeader[csid].MessageHeader.MessageStreamID
+		}
 		header.MessageHeader = mh
 		return n, err
 	default:

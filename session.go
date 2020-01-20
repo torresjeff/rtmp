@@ -57,10 +57,10 @@ type MediaServer interface {
 	onReleaseStream(csID uint32, transactionId float64, args map[string]interface{}, streamKey string)
 	onFCPublish(csID uint32, transactionId float64, args map[string]interface{}, streamKey string)
 	onCreateStream(csID uint32, transactionId float64, data map[string]interface{})
-	onPublish(csID uint32, streamID uint32, transactionId float64, args map[string]interface{}, streamKey string, publishingType string)
+	onPublish(transactionId float64, args map[string]interface{}, streamKey string, publishingType string)
 	onSetDataFrame(metadata map[string]interface{})
-	onFCUnpublish(csID uint32, transactionId float64, args map[string]interface{}, streamKey string)
-	onDeleteStream(csID uint32, transactionId float64, args map[string]interface{}, streamID float64)
+	onFCUnpublish(args map[string]interface{}, streamKey string)
+	onDeleteStream(args map[string]interface{}, streamID float64)
 	onCloseStream(csID uint32, transactionId float64, args map[string]interface{})
 	onAudioMessage(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, payload []byte, timestamp uint32)
 	onVideoMessage(frameType video.FrameType, codec video.Codec, payload []byte, timestamp uint32)
@@ -452,39 +452,36 @@ func (session *Session) onCreateStream(csID uint32, transactionID float64, data 
 	session.messageManager.sendBeginStream(uint32(config.DefaultStreamID))
 }
 
-func (session *Session) onPublish(csID uint32, streamID uint32, transactionID float64, args map[string]interface{}, streamKey string, publishingType string) {
+func (session *Session) onPublish(transactionId float64, args map[string]interface{}, streamKey string, publishingType string) {
 	// TODO: Handle things like look up the user's stream key, check if it's valid.
 	// TODO: For example: twitch returns "Publishing live_user_<username>" in the description.
 	// TODO: Handle things like recording into a file if publishingType = "record" or "append"
-
-
-	// infoObject should have at least three properties: level, code, and description. But may contain other properties.
-	infoObject := map[string]interface{}{
-		"level": "status",
-		"code": "NetStream.Publish.Start",
-		"description": "Publishing live_user_<x>",
-	}
 
 	session.streamKey = streamKey
 	session.publishingType = publishingType
 
 	// TODO: the transaction ID for onStatus messages should be 0 as per the spec. But twitch sends the transaction ID that was in the request to "publish".
 	// For now, reply with the same transaction ID.
-	message := generateStatusMessage(transactionID, streamID, infoObject)
-	session.socketw.Write(message)
-	session.socketw.Flush()
-
+	session.messageManager.sendStatusMessage("status", "NetStream.Publish.Start", "Publishing live_user_<x>")
 	session.isPublisher = true
 	session.broadcaster.RegisterPublisher(streamKey)
 }
 
-func (session *Session) onFCUnpublish(csID uint32, transactionID float64, args map[string]interface{}, streamKey string) {
-	// TODO: Finish broadcasting the messages to every viewer before destroying the session,
+func (session *Session) onFCUnpublish(args map[string]interface{}, streamKey string) {
+
 }
 
-func (session *Session) onDeleteStream(csID uint32, transactionId float64, args map[string]interface{}, streamID float64) {
-	// streamID is the ID of the stream to destroy on the server
+func (session *Session) onDeleteStream(args map[string]interface{}, streamID float64) {
+	// Send end of stream to playback clients
+	if session.isPublisher {
+		session.broadcaster.BroadcastEndOfStream(session.streamKey)
+	}
 }
+
+func (session *Session) sendEndOfStream() {
+	session.messageManager.sendStatusMessage("status", "NetStream.Play.Stop", "Stopped playing stream.")
+}
+
 func (session *Session) onCloseStream(csID uint32, transactionId float64, args map[string]interface{}) {
 
 }
@@ -492,17 +489,16 @@ func (session *Session) onCloseStream(csID uint32, transactionId float64, args m
 // audioData is the full payload (it has the audio headers at the beginning of the payload), for easy forwarding
 // If format == audio.AAC, audioData will contain AACPacketType at index 1
 func (session *Session) onAudioMessage(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, payload []byte, timestamp uint32) {
-	// Cache aac sequence header to send to play back clients
+	// Cache aac sequence header to send to play back clients when they connect
 	if format == audio.AAC && audio.AACPacketType(payload[1]) == audio.AACSequenceHeader {
 		session.broadcaster.SetAacSequenceHeaderForPublisher(session.streamKey, payload)
 	}
-	//fmt.Println("received audio")
 	session.broadcaster.broadcastAudio(session.streamKey, payload, timestamp)
 }
 
 // videoData is the full payload (it has the video headers at the beginning of the payload), for easy forwarding
 func (session *Session) onVideoMessage(frameType video.FrameType, codec video.Codec, payload []byte, timestamp uint32) {
-	// cache avc sequence header to send to playback clients
+	// cache avc sequence header to send to playback clients when they connect
 	if codec == video.H264 && video.AVCPacketType(payload[1]) == video.AVCSequenceHeader {
 		session.broadcaster.SetAvcSequenceHeaderForPublisher(session.streamKey, payload)
 	}

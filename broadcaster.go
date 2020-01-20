@@ -8,6 +8,7 @@ type Subscriber interface {
 	sendVideo(video []byte, timestamp uint32)
 	// TODO: data messages as well?
 	GetID() uint32
+	sendEndOfStream()
 }
 
 type Broadcaster struct {
@@ -90,4 +91,16 @@ func (b *Broadcaster) SetAacSequenceHeaderForPublisher(streamKey string, payload
 
 func (b *Broadcaster) GetAacSequenceHeaderForPublisher(streamKey string) []byte {
 	return b.context.GetAacSequenceHeaderForPublisher(streamKey)
+}
+
+func (b *Broadcaster) BroadcastEndOfStream(streamKey string) {
+	subscribers, err := b.context.GetSubscribersForStream(streamKey)
+	if err != nil {
+		fmt.Println("broadcaster: broadcast end of stream: error getting subscribers for stream, " + err.Error())
+		return
+	}
+
+	for _, sub := range subscribers {
+		sub.sendEndOfStream()
+	}
 }
