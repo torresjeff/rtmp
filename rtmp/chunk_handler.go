@@ -9,6 +9,9 @@ import (
 	"io"
 )
 
+
+var InvalidChunkType error = errors.New("chunk handler: unknown chunk type")
+
 // Chunk types
 const (
 	ChunkType0 uint8 = 0
@@ -22,7 +25,7 @@ const (
 	// consistent in sending the same type of data through the same chunk stream id
 	ProtocolChannel uint8 = 2
 	AudioChannel uint8 = 4
-	VideoChannel uint8 = 5
+	VideoChannel uint8 = 7
 )
 
 const DefaultMaximumChunkSize = 128
@@ -94,21 +97,26 @@ func NewChunkHandler(reader *bufio.Reader, writer *bufio.Writer) *ChunkHandler {
 	}
 }
 
-func (chunkHandler *ChunkHandler) ReadChunkHeader() (ChunkHeader, error) {
-	ch := ChunkHeader{}
-	var err error
-	if err = chunkHandler.readBasicHeader(&ch); err != nil {
-		return ch, err
+func (chunkHandler *ChunkHandler) ReadChunkHeader() (ch ChunkHeader, n int, err error) {
+	ch = ChunkHeader{}
+	r, err := chunkHandler.readBasicHeader(&ch)
+	n += r
+	if err != nil {
+		return ch, n, err
 	}
-	if err = chunkHandler.readMessageHeader(&ch); err != nil {
-		return ch, err
+	r, err = chunkHandler.readMessageHeader(&ch)
+	n += r
+	if err != nil {
+		return ch, n, err
 	}
 
 	isExtendedTimestamp := false
 	// Check if this chunk has an extended timestamp, and if it does then read it. A Timestamp of 0xFFFFFF indicates an extended timestamp.
 	if ch.MessageHeader.Timestamp == 0xFFFFFF {
-		if err = chunkHandler.readExtendedTimestamp(&ch); err != nil {
-			return ch, err
+		r, err = chunkHandler.readExtendedTimestamp(&ch)
+		n += r
+		if err != nil {
+			return ch, n, err
 		}
 		isExtendedTimestamp = true
 	}
@@ -133,55 +141,17 @@ func (chunkHandler *ChunkHandler) ReadChunkHeader() (ChunkHeader, error) {
 	}
 
 	chunkHandler.prevChunkHeader[csid] = ch
-	return ch, nil
+	return ch, n, err
 }
 
-// assembleMessage is called when the length of a message is greater than the currently set chunkSize.
-// It returns the final payload of the message assembled from multiple chunks.
-func (chunkHandler *ChunkHandler) assembleMessage(messageLength uint32) ([]byte, error) {
-	payload := make([]byte, messageLength)
-
-	// Read the initial chunk data that was sent with the first chunk header
-	_, err := io.ReadFull(chunkHandler.socketr, payload[:chunkHandler.inChunkSize])
-	if err != nil {
-		return nil, err
-	}
-	// Update the number of bytes read to the inChunkSize since we already read at least inChunkSize bytes
-	bytesRead := chunkHandler.inChunkSize
-	// While there are still more bytes to read
-	for bytesRead < messageLength {
-		// Read the next chunks (header + data) until we complete our message
-		_, err := chunkHandler.ReadChunkHeader()
-		if err != nil {
-			return nil, errors.New("error reading chunk while attempting to assemble a multi-chunk message" + err.Error())
-		}
-		// If this chunk is still not the end of the message, then read the whole chunk
-		if bytesRead + chunkHandler.inChunkSize < messageLength {
-			_, err := io.ReadFull(chunkHandler.socketr, payload[bytesRead:bytesRead + chunkHandler.inChunkSize])
-			if err != nil {
-				return nil, err
-			}
-			bytesRead += chunkHandler.inChunkSize
-		} else {
-			// If this is the last chunk of the message, just read the remaining bytes
-			remainingBytes := messageLength - bytesRead
-			_, err := io.ReadFull(chunkHandler.socketr, payload[bytesRead:bytesRead + remainingBytes])
-			if err != nil {
-				return nil, err
-			}
-			bytesRead += remainingBytes
-		}
-	}
-	return payload, nil
-}
-
-func (chunkHandler *ChunkHandler) readBasicHeader(header *ChunkHeader) error {
+func (chunkHandler *ChunkHandler) readBasicHeader(header *ChunkHeader) (n int, err error) {
 	basicHeader := &ChunkBasicHeader{}
 
 	b, err := chunkHandler.socketr.ReadByte()
 	if err != nil {
-		return err
+		return n, err
 	}
+	n++
 	// Extract chunk type (FMT field) by getting the 2 highest bits (bit 6 and 7 store fmt)
 	basicHeader.FMT = uint8(b) >> 6
 	// Get the chunk stream ID (first 6 bits, bits 0-5). 0x3F == 0011 1111 in binary (our bit mask to extract the lowest 6 bits)
@@ -191,59 +161,50 @@ func (chunkHandler *ChunkHandler) readBasicHeader(header *ChunkHeader) error {
 		// if csid is 0, that means we're dealing with chunk basic header 2 (uses 2 bytes). We've already read one before (b), so read the remaining one.
 		id, err := chunkHandler.socketr.ReadByte()
 		if err != nil {
-			return err
+			return n, err
 		}
+		n++
 		basicHeader.ChunkStreamID = uint32(id) + 64
 	} else if csid == 1 {
 		// if csid is 1, that means we're dealing with chunk basic header 3 (uses 3 bytes). We've already read one before (b), so read the remaining two.
 		id := make([]byte, 2)
-		_, err := io.ReadFull(chunkHandler.socketr, id)
+		r, err := io.ReadFull(chunkHandler.socketr, id)
+		n += r
 		if err != nil {
-			return err
+			return n, err
 		}
 		basicHeader.ChunkStreamID = uint32(binary.BigEndian.Uint16(id))+ 64
 		chunkHandler.bytesReceived += 2
 	} else {
-		// if csid is neither 0 or 1, that means we're dealing with chunk basic header 1 (uses 1 byte).
+		// if csid is neither 0 or 1, that means we're dealing with chunk basic header 1 (uses 1 byte). We already read it.
 		basicHeader.ChunkStreamID = uint32(csid)
 	}
 
 	header.BasicHeader = basicHeader
-	return nil
+	return n, err
 }
 
-func (chunkHandler *ChunkHandler) ReadChunkData(header ChunkHeader) ([]byte, error) {
-	messageLength := header.MessageHeader.MessageLength
-	var payload []byte
-	// Check if the length of the message is greater than the chunk size (default chunk size is 128 if no Set Chunk Size message has been received).
-	// If it is, we have to assemble the complete message from various chunks.
-	if messageLength > chunkHandler.inChunkSize {
-		messagePayload, err := chunkHandler.assembleMessage(messageLength)
-		if err != nil {
-			return nil, err
-		}
-		payload = messagePayload
-	} else {
-		payload = make([]byte, messageLength)
-		_, err := io.ReadFull(chunkHandler.socketr, payload)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return payload, nil
-}
-
-func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) error {
+func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) (n int, err error) {
 	csid := header.BasicHeader.ChunkStreamID
 	mh := &ChunkMessageHeader{}
 	switch header.BasicHeader.FMT {
+	//0                   1                   2                   3
+	//0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+	//+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	//|                   timestamp                   |message length |
+	//+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	//|     message length (cont)     |message type id| msg stream id |
+	//+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	//|           message stream id (cont)            |
+	//+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	//
+	//	Chunk Message Header - Type 0
 	case ChunkType0:
 		messageHeader := make([]byte, 11)
 		// A chunk of type 0 has a message header size of 11 bytes, so read 11 bytes into our messageHeader buffer
-		_, err := io.ReadFull(chunkHandler.socketr, messageHeader)
+		n, err = io.ReadFull(chunkHandler.socketr, messageHeader)
 		if err != nil {
-			return err
+			return n, err
 		}
 		// Since the timestamp field is 3 bytes long, to be able to interpret it as a 32-bit uint we have to add 1 byte at the beginning (3 + 1 byte = 4 bytes == 32-bits)
 		mh.Timestamp = binary.BigEndian.Uint32(append([]byte{0x00}, messageHeader[:3]...))
@@ -256,13 +217,22 @@ func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) error {
 		mh.MessageStreamID = binary.LittleEndian.Uint32(messageHeader[7:])
 
 		header.MessageHeader = mh
-		return nil
+		return n, err
+	//0                   1                   2                   3
+	//0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+	//+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	//|                timestamp delta                |message length |
+	//+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	//|     message length (cont)     |message type id|
+	//+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	//
+	//	Chunk Message Header - Type 1
 	case ChunkType1:
 		messageHeader := make([]byte, 7)
 		// A chunk of type 1 has a message header size of 7 bytes, so read 7 bytes into our messageHeader buffer
-		_, err := io.ReadFull(chunkHandler.socketr, messageHeader)
+		n, err = io.ReadFull(chunkHandler.socketr, messageHeader)
 		if err != nil {
-			return err
+			return n, err
 		}
 		// Since the timestamp delta field is 3 bytes long, to be able to interpret it as a 32-bit uint we have to add 1 byte at the beginning (3 + 1 byte = 4 bytes == 32-bits)
 		// NOTE: this uses the TimestampDelta field, not the Timestamp field (which is only used for chunk type 0)
@@ -275,13 +245,20 @@ func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) error {
 		mh.MessageStreamID = chunkHandler.prevChunkHeader[csid].MessageHeader.MessageStreamID
 
 		header.MessageHeader = mh
-		return nil
+		return n, err
+	//0                   1                   2
+	//0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3
+	//+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	//|                timestamp delta                |
+	//+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	//
+	//	Chunk Message Header - Type 2
 	case ChunkType2:
 		messageHeader := make([]byte, 3)
-		// A chunk of type 1 has a message header size of 3 bytes, so read 3 bytes into our messageHeader buffer
-		_, err := io.ReadFull(chunkHandler.socketr, messageHeader)
+		// A chunk of type 2 has a message header size of 3 bytes, so read 3 bytes into our messageHeader buffer
+		n, err = io.ReadFull(chunkHandler.socketr, messageHeader)
 		if err != nil {
-			return err
+			return n, err
 		}
 		// Since the timestamp delta field is 3 bytes long, to be able to interpret it as a 32-bit uint we have to add 1 byte at the beginning (3 + 1 byte = 4 bytes == 32-bits)
 		// NOTE: this uses the TimestampDelta field, not the Timestamp field (which is only used for chunk type 0)
@@ -294,7 +271,7 @@ func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) error {
 		mh.MessageTypeID = chunkHandler.prevChunkHeader[csid].MessageHeader.MessageTypeID
 
 		header.MessageHeader = mh
-		return nil
+		return n, err
 	case ChunkType3:
 		// Chunk type 3 message headers don't have any data. All values are taken from the previous header.
 		// As per the spec: If a Type 3 chunk follows a Type 0 chunk, then the timestamp delta for this Type 3 chunk is the same as the timestamp of the Type 0 chunk.
@@ -307,20 +284,90 @@ func (chunkHandler *ChunkHandler) readMessageHeader(header *ChunkHeader) error {
 		mh.MessageTypeID = chunkHandler.prevChunkHeader[csid].MessageHeader.MessageTypeID
 		mh.MessageStreamID = chunkHandler.prevChunkHeader[csid].MessageHeader.MessageStreamID
 		header.MessageHeader = mh
-		return nil
+		return n, err
 	default:
-		return errors.New("chunk handler: unknown chunk type")
+		return n, InvalidChunkType
 	}
 }
 
-func (chunkHandler *ChunkHandler) readExtendedTimestamp(header *ChunkHeader) error {
-	extendedTimestamp := make([]byte, 4)
-	_, err := io.ReadFull(chunkHandler.socketr, extendedTimestamp)
+// assembleMessage is called when the length of a message is greater than the currently set chunkSize.
+// It returns the final payload of the message assembled from multiple chunks.
+func (chunkHandler *ChunkHandler) assembleMessage(messageLength uint32) (payload []byte, n int, err error) {
+	//fmt.Println("assembling message...")
+	payload = make([]byte, messageLength)
+	// Read the initial chunk data that was sent with the first chunk header
+	n, err = io.ReadFull(chunkHandler.socketr, payload[:chunkHandler.inChunkSize])
+	offset := chunkHandler.inChunkSize
 	if err != nil {
-		return err
+		return payload, n, err
+	}
+
+	// While there are still more bytes to read
+	for offset < messageLength {
+		// Read the next chunks (header + data) until we complete our message
+		_, r, err := chunkHandler.ReadChunkHeader()
+		//fmt.Printf("assembling message, encountered chunk type: %d, message type: %d\n", h.BasicHeader.FMT, h.MessageHeader.MessageTypeID)
+		n += r
+		if err != nil {
+			return payload, n, err
+		}
+		// If this chunk is still not the end of the message, then read the whole chunk
+		if offset + chunkHandler.inChunkSize < messageLength {
+			r, err := io.ReadFull(chunkHandler.socketr, payload[offset:offset + chunkHandler.inChunkSize])
+			n += r
+			if err != nil {
+				return payload, n, err
+			}
+			offset += chunkHandler.inChunkSize
+		} else {
+			// If this is the last chunk of the message, just read the remaining bytes
+			remainingBytes := messageLength - offset
+			r, err := io.ReadFull(chunkHandler.socketr, payload[offset:offset + remainingBytes])
+			n += r
+			if err != nil {
+				return payload, n, err
+			}
+			offset += remainingBytes
+		}
+	}
+	return payload, n, err
+}
+
+func (chunkHandler *ChunkHandler) ReadChunkData(header ChunkHeader) (payload []byte, n int, err error) {
+	messageLength := header.MessageHeader.MessageLength
+	// Check if the length of the message is greater than the chunk size (default chunk size is 128 if no Set Chunk Size message has been received).
+	// If it is, we have to assemble the complete message from various chunks.
+	if messageLength > chunkHandler.inChunkSize {
+		//fmt.Println("assembling message, encountered chunk type:", header.BasicHeader.FMT)
+		payload, n, err = chunkHandler.assembleMessage(messageLength)
+		//if header.MessageHeader.MessageTypeID == VideoMessage {
+		//	fmt.Printf("assembled message of type: %d, message length: %d\n", header.MessageHeader.MessageTypeID, messageLength)
+		//}
+		if err != nil {
+			return payload, n, err
+		}
+	} else {
+		//if header.MessageHeader.MessageTypeID == VideoMessage {
+		//	fmt.Printf("read chunk data, no need to assemble message, type: %d, message length: %d\n", header.MessageHeader.MessageTypeID, messageLength)
+		//}
+		payload = make([]byte, messageLength)
+		n, err = io.ReadFull(chunkHandler.socketr, payload)
+		if err != nil {
+			return payload, n, err
+		}
+	}
+
+	return payload, n, err
+}
+
+func (chunkHandler *ChunkHandler) readExtendedTimestamp(header *ChunkHeader) (n int, err error) {
+	extendedTimestamp := make([]byte, 4)
+	n, err = io.ReadFull(chunkHandler.socketr, extendedTimestamp)
+	if err != nil {
+		return
 	}
 	header.ExtendedTimestamp = binary.BigEndian.Uint32(extendedTimestamp)
-	return nil
+	return n, err
 }
 
 func (chunkHandler *ChunkHandler) updateBytesReceived(i uint32) {
@@ -453,7 +500,11 @@ func (chunkHandler *ChunkHandler) send(header []byte, payload []byte) error {
 	return nil
 }
 
-func (chunkHandler *ChunkHandler) sendBytes(bytes []byte) {
-	chunkHandler.socketw.Write(bytes)
-	chunkHandler.socketw.Flush()
+func (chunkHandler *ChunkHandler) sendBytes(bytes []byte) (n int, err error) {
+	n, err = chunkHandler.socketw.Write(bytes)
+	if err != nil {
+		return
+	}
+	err = chunkHandler.socketw.Flush()
+	return
 }

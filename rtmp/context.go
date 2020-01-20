@@ -10,12 +10,15 @@ type ContextStore interface {
 	DestroyPublisher(streamKey string) error
 	RegisterSubscriber(streamKey string, subscriber Subscriber) error
 	GetSubscribersForStream(streamKey string) ([]Subscriber, error)
+	SetAvcSequenceHeaderForPublisher(streamKey string, payload []byte)
+	GetAvcSequenceHeaderForPublisher(streamKey string) []byte
 }
 
 type InMemoryContext struct {
 	ContextStore
 	subscribers      map[string][]Subscriber
 	numberOfSessions uint32
+	avcSequenceHeaderCache map[string][]byte
 }
 
 var StreamNotFound error = errors.New("StreamNotFound")
@@ -23,6 +26,7 @@ var StreamNotFound error = errors.New("StreamNotFound")
 func NewInMemoryContext() *InMemoryContext {
 	return &InMemoryContext{
 		subscribers: make(map[string][]Subscriber),
+		avcSequenceHeaderCache: make(map[string][]byte),
 	}
 }
 
@@ -62,4 +66,13 @@ func (c *InMemoryContext) GetSubscribersForStream(streamKey string) ([]Subscribe
 	}
 	// If no stream was found with that stream key, send an error
 	return nil, StreamNotFound
+}
+
+func (c *InMemoryContext) SetAvcSequenceHeaderForPublisher(streamKey string, payload []byte) {
+	c.avcSequenceHeaderCache[streamKey] = payload
+}
+
+func (c *InMemoryContext) GetAvcSequenceHeaderForPublisher(streamKey string) []byte {
+	// TODO: handle cases where cache doesn't exist
+	return c.avcSequenceHeaderCache[streamKey]
 }

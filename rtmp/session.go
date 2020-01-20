@@ -80,6 +80,7 @@ type Session struct {
 	socketr        *bufio.Reader
 	socketw        *bufio.Writer
 	clientMetadata clientMetadata
+	context ContextStore
 	broadcaster    *Broadcaster // broadcasts audio/video messages to playback clients subscribed to a stream
 	active         bool         // true if the session is active
 
@@ -101,12 +102,13 @@ type Session struct {
 	firstAudioMessage bool
 }
 
-func NewSession(sessionID uint32, conn *net.Conn, b *Broadcaster) *Session {
+func NewSession(sessionID uint32, conn *net.Conn, b *Broadcaster, c ContextStore) *Session {
 	session := &Session{
 		sessionID:         sessionID,
 		conn:              *conn,
 		socketr:           bufio.NewReaderSize(*conn, config.BuffioSize),
 		socketw: bufio.NewWriterSize(*conn, config.BuffioSize),
+		context: c,
 		broadcaster:       b,
 		active:            true,
 		firstAudioMessage: true,
@@ -123,6 +125,7 @@ func (session *Session) Run() error {
 	if err != nil {
 		session.broadcaster.DestroyPublisher(session.streamKey)
 		session.conn.Close()
+		fmt.Println("session: error in handshake")
 		return err
 	}
 
@@ -133,17 +136,17 @@ func (session *Session) Run() error {
 	// After handshake, start reading chunks
 	for {
 		if session.active {
-			if err := session.messageManager.nextMessage(); err == io.EOF {
+			if err = session.messageManager.nextMessage(); err == io.EOF {
 				session.broadcaster.DestroyPublisher(session.streamKey)
-				session.conn.Close()
-				return nil
+				return session.conn.Close()
 			} else if err != nil {
 				session.broadcaster.DestroyPublisher(session.streamKey)
+				session.conn.Close()
 				return err
 			}
 		} else {
 			// Session is over, finish the session
-			return nil
+			return session.conn.Close()
 		}
 	}
 }
@@ -481,23 +484,30 @@ func (session *Session) onAudioMessage(format audio.Format, sampleRate audio.Sam
 
 // videoData is the full payload (it has the video headers at the beginning of the payload), for easy forwarding
 func (session *Session) onVideoMessage(frameType video.FrameType, codec video.Codec, payload []byte, timestamp uint32) {
-	//fmt.Println("received video")
+	// cache avc sequence header to send to playback clients
+	if codec == video.H264 && video.AVCPacketType(payload[1]) == video.AVCSequenceHeader {
+		session.context.SetAvcSequenceHeaderForPublisher(session.streamKey, payload)
+	}
 	session.broadcaster.broadcastVideo(session.streamKey, payload, timestamp)
 }
 
 func (session *Session) onPlay(streamKey string, startTime float64) {
-	err := session.broadcaster.RegisterSubscriber(streamKey, session)
-	if err != nil {
-		// TODO: send failure response to client
-	}
 
-	// TODO: Send reset if the client sent it in the request
 	infoObject := map[string]interface{}{
+		// TODO: Send reset if the client sent it in the request
 		"level": "status",
 		"code": "NetStream.Play.Start",
 		"description": "Playing stream for live_user_<x>",
 	}
 	session.messageManager.sendPlayStart(infoObject)
+	session.messageManager.sendRtmpSampleAccess(true, true)
+	payload := session.context.GetAvcSequenceHeaderForPublisher(streamKey)
+	fmt.Printf("sending video onPlay, sequence header with timestamp: 0, body size: %d", len(payload))
+	session.messageManager.sendVideo(payload, 0)
+	err := session.broadcaster.RegisterSubscriber(streamKey, session)
+	if err != nil {
+		// TODO: send failure response to client
+	}
 }
 
 func (session *Session) sendAudio(audio []byte, timestamp uint32) {

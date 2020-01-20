@@ -54,12 +54,12 @@ func NewMessageManager(session MediaServer, chunkHandler *ChunkHandler) *Message
 func (m *MessageManager) nextMessage() error {
 	// TODO: every time a chunk is read, update the number of read bytes
 	var err error
-	chunkHeader, err := m.chunkHandler.ReadChunkHeader()
+	chunkHeader, _, err := m.chunkHandler.ReadChunkHeader()
 	if err != nil {
 		return err
 	}
 
-	payload, err := m.chunkHandler.ReadChunkData(chunkHeader)
+	payload, _, err := m.chunkHandler.ReadChunkData(chunkHeader)
 	if err != nil {
 		return err
 	}
@@ -90,9 +90,13 @@ func (m *MessageManager) interpretMessage(header ChunkHeader, payload []byte) er
 		return m.handleDataMessage(header.MessageHeader.MessageTypeID, payload)
 	case AudioMessage:
 		//fmt.Print(" audio\n")
+		//fmt.Printf("audio message: fmt %d, chunk stream id %d, message stream id %d, timestamp %d, elapsed time %d, message length %d\n", header.BasicHeader.FMT, header.BasicHeader.ChunkStreamID,
+		//	header.MessageHeader.MessageStreamID, header.MessageHeader.Timestamp, header.ElapsedTime, header.MessageHeader.MessageLength)
 		return m.handleAudioMessage(header.BasicHeader.ChunkStreamID, header.MessageHeader.MessageStreamID, payload, header.ElapsedTime)
 	case VideoMessage:
 		//fmt.Print(" video\n")
+		//fmt.Printf("video message: fmt %d, chunk stream id %d, message stream id %d, timestamp %d, elapsed time %d, message length %d\n", header.BasicHeader.FMT, header.BasicHeader.ChunkStreamID,
+		//	header.MessageHeader.MessageStreamID, header.MessageHeader.Timestamp, header.ElapsedTime, header.MessageHeader.MessageLength)
 		return m.handleVideoMessage(header.BasicHeader.ChunkStreamID, header.MessageHeader.MessageStreamID, payload, header.ElapsedTime)
 	default:
 		return errors.New(fmt.Sprintf("message manager: received unknown message type ID in header, ID (decimal): %d", header.MessageHeader.MessageTypeID))
@@ -275,6 +279,12 @@ func (m *MessageManager) handleDataMessageAmf0(dataName string, payload []byte) 
 }
 
 func (m *MessageManager) handleAudioMessage(chunkStreamID uint32, messageStreamID uint32, payload []byte, timestamp uint32) error {
+	//hash := make([]byte, 0)
+	//sha256Hash := sha256.New()
+	//sha256Hash.Reset()
+	//sha256Hash.Write(payload)
+	//hash = sha256Hash.Sum(hash)
+	//fmt.Println("received audio, hash:", string(hash))
 	// Header contains sound format, rate, size, type
 	audioHeader := payload[0]
 	format := audio.Format((audioHeader >> 4) & 0x0F)
@@ -286,10 +296,17 @@ func (m *MessageManager) handleAudioMessage(chunkStreamID uint32, messageStreamI
 }
 
 func (m *MessageManager) handleVideoMessage(csID uint32, messageStreamID uint32, payload []byte, timestamp uint32) error {
+	//hash := make([]byte, 0)
+	//sha256Hash := sha256.New()
+	//sha256Hash.Reset()
+	//sha256Hash.Write(payload)
+	//hash = sha256Hash.Sum(hash)
+	//fmt.Println("received video, hash:", hash)
 	// Header contains frame type (key frame, i-frame, etc.) and format/codec (H264, etc.)
 	videoHeader := payload[0]
 	frameType := video.FrameType((videoHeader >> 4) & 0x0F)
 	codec := video.Codec(videoHeader & 0x0F)
+
 	m.session.onVideoMessage(frameType, codec, payload, timestamp)
 	return nil
 }
@@ -381,9 +398,14 @@ func (m *MessageManager) sendAudio(audio []byte, timestamp uint32) {
 	//fmt.Println("audio header:\n", hex.Dump(header))
 	// The chunk handler will divide these into more chunks if the payload is greater than the chunk size
 	m.chunkHandler.send(header, audio)
+	//if err != nil {
+	//	fmt.Println("error sending audio", err)
+	//}
+	//fmt.Println("bytes written:", n)
 }
 
 func (m *MessageManager) sendVideo(video []byte, timestamp uint32) {
+	//video = append([]byte{byte(0x27), 1, 0, 0, 0x50}, video...)
 	var header []byte
 	isExtendedTimestamp := timestamp >= 0xFFFFFF
 	messageLength := len(video)
@@ -433,14 +455,57 @@ func (m *MessageManager) sendVideo(video []byte, timestamp uint32) {
 		// TODO: make stream ID constant for audio/video messages
 		binary.LittleEndian.PutUint32(header[8:], 1)
 	}
-	//fmt.Println("video timestamp =", timestamp)
-	//fmt.Println("video header:\n", hex.Dump(header))
-	m.chunkHandler.send(header, video)
+	err := m.chunkHandler.send(header, video)
+	if err != nil {
+		fmt.Println("message manager received error in send:", err)
+	}
+	//if err != nil {
+	//	fmt.Println("error sending video", err)
+	//}
+	//fmt.Println("bytes written:", n)
 }
 
 func (m *MessageManager) sendPlayStart(info map[string]interface{}) {
 	message := generateStatusMessage(4, 1, info)
 	m.chunkHandler.sendBytes(message)
+}
+
+func (m *MessageManager) sendRtmpSampleAccess(audio bool, video bool) {
+	message := generateDataMessageRtmpSampleAccess(audio, video)
+	m.chunkHandler.sendBytes(message)
+}
+
+func generateDataMessageRtmpSampleAccess(audio bool, video bool) []byte {
+	message := make([]byte, 12)
+
+	// fmt & csid
+	message[0] = 5
+
+	// timestamp
+	//message[1] = 0
+	//message[2] = 0
+	//message[3] = 0
+
+	// body size
+	message[4] = 0
+	message[5] = 0
+	message[6] = 24
+
+	// message type ID
+	message[7] = DataMessageAMF0
+
+	// stream ID
+	binary.LittleEndian.PutUint32(message[8:], 1)
+
+	rtmpSampleAccess, _ := amf0.Encode("|RtmpSampleAccess")
+	message = append(message, rtmpSampleAccess...)
+	audioTrue, _ := amf0.Encode(audio)
+	message = append(message, audioTrue...)
+	videoTrue, _ := amf0.Encode(video)
+	message = append(message, videoTrue...)
+
+	fmt.Println("Rtmp message size:", len(message))
+	return message
 }
 
 
