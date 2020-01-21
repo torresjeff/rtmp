@@ -11,9 +11,7 @@ import (
 )
 
 
-// TODO: should I make a DecodeNumber, DecodeBool, etc. to avoid returning an empty interface and have the benefits of strong typing (no need to cast or type assertions)
-
-// Decode returns the original form of the encoded value, and an error if any occurred.
+// Decode returns the original form of the encoded value, or an error if any occurred.
 // Possible return types: float64, bool, string, map[string]interface{}, nil, amf0.ECMAArray, time.Time
 // If the contents of b represent a Number (either int or float), it will be returned as a float64
 func Decode(bytes []byte) (interface{}, error) {

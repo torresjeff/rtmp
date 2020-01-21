@@ -30,6 +30,6 @@ var generator *rand.Rand = rand.New(source)
 
 // Generates a unique ID when a session is created to identify it.
 func GenerateSessionId() uint32 {
-	// TODO: guarantee randomness with crypto/rand?
+	// guarantee randomness with crypto/rand?
 	return generator.Uint32()
 }

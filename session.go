@@ -5,15 +5,11 @@ import (
 	"fmt"
 	"github.com/torresjeff/rtmp/audio"
 	"github.com/torresjeff/rtmp/config"
-	"github.com/torresjeff/rtmp/rand"
 	"github.com/torresjeff/rtmp/video"
 	"io"
 	"net"
 	"strings"
 )
-
-const RtmpVersion3 = 0x03
-
 
 type surroundSound struct {
 	stereoSound bool
@@ -65,11 +61,6 @@ type MediaServer interface {
 	onAudioMessage(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, payload []byte, timestamp uint32)
 	onVideoMessage(frameType video.FrameType, codec video.Codec, payload []byte, timestamp uint32)
 	onPlay(streamKey string, startTime float64)
-
-	// True if no audio message has been sent yet to this subscriber
-	// TODO: this should be part of the subscriber, not the media server
-	isFirstAudioMessage() bool
-	setFirstAudioMessage(firstAudioMessage bool)
 }
 
 // Represents a connection made with the RTMP server where messages are exchanged between client/server.
@@ -82,10 +73,6 @@ type Session struct {
 	clientMetadata clientMetadata
 	broadcaster    *Broadcaster // broadcasts audio/video messages to playback clients subscribed to a stream
 	active         bool         // true if the session is active
-
-	//handshakeState HandshakeState
-	c1 []byte
-	s1 []byte
 
 	// Interprets messages, calling the appropriate callback on the session. Also in charge of sending messages.
 	messageManager *MessageManager
@@ -119,7 +106,7 @@ func NewSession(sessionID uint32, conn *net.Conn, b *Broadcaster) *Session {
 // Run performs the initial handshake and starts receiving streams of data.
 func (session *Session) Run() error {
 	// Perform handshake
-	err := session.Handshake()
+	err := Handshake(session.socketr, session.socketw)
 	if err == io.EOF {
 		return session.conn.Close()
 	} else if err != nil {
@@ -170,107 +157,6 @@ func (session *Session) Run() error {
 
 func (session *Session) GetID() uint32 {
 	return session.sessionID
-}
-
-func (session *Session) Handshake() error {
-	var err error
-	if err = session.readC0C1(); err != nil {
-		return err
-	}
-	if err = session.sendS0S1S2(); err != nil {
-		return err
-	}
-	if err = session.readC2(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (session *Session) send(bytes []byte) error {
-	if _, err := session.socketw.Write(bytes); err != nil {
-		return err
-	}
-	if err := session.socketw.Flush(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (session *Session) write(bytes []byte) error {
-	if _, err := session.socketw.Write(bytes); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (session *Session) flush() error {
-	if err := session.socketw.Flush(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (session *Session) read(bytes []byte) error {
-	if _, err := session.socketr.Read(bytes); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (session *Session) readC0C1() error {
-	var c0c1 [1537]byte
-	err := session.read(c0c1[:])
-	if err != nil {
-		return err
-	}
-	// Extract c1 message (which starts at byte 1) and store it for future use (sending it in S2)
-	session.c1 = c0c1[1:]
-	return nil
-}
-
-func (session *Session) readC2() error {
-	var c2 [1536]byte
-	if err := session.read(c2[:]); err != nil {
-		return err
-	}
-	return nil
-}
-
-// Sends the s0, s1, and s2 sequence
-func (session *Session) sendS0S1S2() error {
-	var s0s1s2 [1 + 2*1536]byte
-	var err error
-	// s0 message is stored in byte 0
-	s0s1s2[0] = RtmpVersion3
-	// s1 message is stored in bytes 1-1536
-	if err = session.generateS1(s0s1s2[1:1537]); err != nil {
-		return err
-	}
-	// s2 message is stored in bytes 1537-3073
-	if err = session.generateS2(s0s1s2[1537:]); err != nil {
-		return err
-	}
-
-	return session.send(s0s1s2[:])
-}
-
-// Generates an S1 message and stores it in s1
-func (session *Session) generateS1(s1 []byte) error {
-	// the s1 byte array is zero-initialized, since we didn't modify it, we're sending our time as 0
-	err := rand.GenerateRandomDataFromBuffer(s1[8:])
-	if err != nil {
-		return err
-	}
-	session.s1 = s1[:]
-	return nil
-}
-
-
-// Generates an S1 message and stores it in s2. The S2 message is an echo of the C1 message
-func (session *Session) generateS2(s2 []byte) error {
-	copy(s2[:], session.c1)
-	return nil
 }
 
 func (session *Session) onWindowAckSizeReached(sequenceNumber uint32) {
@@ -427,56 +313,38 @@ func (session *Session) onSetDataFrame(metadata map[string]interface{}) {
 }
 
 func (session *Session) onReleaseStream(csID uint32, transactionID float64, args map[string]interface{}, streamKey string) {
-	// TODO: what does releaseStream actually do? Does it close the stream?
-	// TODO: check stuff like is stream key valid, is the user allowed to release the stream
-
-	// TODO: implement
 }
 
 func (session *Session) onFCPublish(csID uint32, transactionID float64, args map[string]interface{}, streamKey string) {
-	// TODO: check stuff like is stream key valid, is the user allowed to publish to the stream
-
-	session.sendOnFCPublish(csID, transactionID, streamKey)
-}
-
-func (session *Session) sendOnFCPublish(csID uint32, transactionID float64, streamKey string) {
-	message := generateOnFCPublishMessage(csID, transactionID, streamKey)
-	session.socketw.Write(message)
-	session.socketw.Flush()
+	session.messageManager.sendOnFCPublish(csID, transactionID, streamKey)
 }
 
 func (session *Session) onCreateStream(csID uint32, transactionID float64, data map[string]interface{}) {
 	// data object could be nil
-	message := generateCreateStreamResponse(csID, transactionID, data)
-	session.socketw.Write(message)
-	session.socketw.Flush()
-
+	session.messageManager.sendCreateStreamResponse(csID, transactionID, data)
 	session.messageManager.sendBeginStream(uint32(config.DefaultStreamID))
 }
 
 func (session *Session) onPublish(transactionId float64, args map[string]interface{}, streamKey string, publishingType string) {
 	// TODO: Handle things like look up the user's stream key, check if it's valid.
 	// TODO: For example: twitch returns "Publishing live_user_<username>" in the description.
-	// TODO: Handle things like recording into a file if publishingType = "record" or "append"
+	// TODO: Handle things like recording into a file if publishingType = "record" or "append". Or always record?
 
 	session.streamKey = streamKey
 	session.publishingType = publishingType
 
-	// TODO: the transaction ID for onStatus messages should be 0 as per the spec. But twitch sends the transaction ID that was in the request to "publish".
-	// For now, reply with the same transaction ID.
 	session.messageManager.sendStatusMessage("status", "NetStream.Publish.Start", "Publishing live_user_<x>")
 	session.isPublisher = true
 	session.broadcaster.RegisterPublisher(streamKey)
 }
 
 func (session *Session) onFCUnpublish(args map[string]interface{}, streamKey string) {
-
 }
 
 func (session *Session) onDeleteStream(args map[string]interface{}, streamID float64) {
 }
 
-func (session *Session) sendEndOfStream() {
+func (session *Session) SendEndOfStream() {
 	session.messageManager.sendStatusMessage("status", "NetStream.Play.Stop", "Stopped playing stream.")
 }
 
@@ -491,7 +359,7 @@ func (session *Session) onAudioMessage(format audio.Format, sampleRate audio.Sam
 	if format == audio.AAC && audio.AACPacketType(payload[1]) == audio.AACSequenceHeader {
 		session.broadcaster.SetAacSequenceHeaderForPublisher(session.streamKey, payload)
 	}
-	session.broadcaster.broadcastAudio(session.streamKey, payload, timestamp)
+	session.broadcaster.BroadcastAudio(session.streamKey, payload, timestamp)
 }
 
 // videoData is the full payload (it has the video headers at the beginning of the payload), for easy forwarding
@@ -500,7 +368,7 @@ func (session *Session) onVideoMessage(frameType video.FrameType, codec video.Co
 	if codec == video.H264 && video.AVCPacketType(payload[1]) == video.AVCSequenceHeader {
 		session.broadcaster.SetAvcSequenceHeaderForPublisher(session.streamKey, payload)
 	}
-	session.broadcaster.broadcastVideo(session.streamKey, payload, timestamp)
+	session.broadcaster.BroadcastVideo(session.streamKey, payload, timestamp)
 }
 
 func (session *Session) onPlay(streamKey string, startTime float64) {
@@ -512,18 +380,18 @@ func (session *Session) onPlay(streamKey string, startTime float64) {
 	}
 	session.messageManager.sendStatusMessage("status", "NetStream.Play.Start", "Playing stream for live_user_<x>")
 	avcSeqHeader := session.broadcaster.GetAvcSequenceHeaderForPublisher(streamKey)
-	if config.Debug {
-		fmt.Printf("sending video onPlay, sequence header with timestamp: 0, body size: %d\n", len(avcSeqHeader))
-	}
 	if avcSeqHeader != nil {
+		if config.Debug {
+			fmt.Printf("sending video onPlay, sequence header with timestamp: 0, body size: %d\n", len(avcSeqHeader))
+		}
 		session.messageManager.sendVideo(avcSeqHeader, 0)
 	}
 
 	aacSeqHeader := session.broadcaster.GetAacSequenceHeaderForPublisher(streamKey)
-	if config.Debug {
-		fmt.Printf("sending audio onPlay, sequence header with timestamp: 0, body size: %d\n", len(aacSeqHeader))
-	}
 	if aacSeqHeader != nil {
+		if config.Debug {
+			fmt.Printf("sending audio onPlay, sequence header with timestamp: 0, body size: %d\n", len(aacSeqHeader))
+		}
 		session.messageManager.sendAudio(aacSeqHeader, 0)
 	}
 
@@ -534,10 +402,10 @@ func (session *Session) onPlay(streamKey string, startTime float64) {
 	}
 }
 
-func (session *Session) sendAudio(audio []byte, timestamp uint32) {
+func (session *Session) SendAudio(audio []byte, timestamp uint32) {
 	session.messageManager.sendAudio(audio, timestamp)
 }
 
-func (session *Session) sendVideo(video []byte, timestamp uint32) {
+func (session *Session) SendVideo(video []byte, timestamp uint32) {
 	session.messageManager.sendVideo(video, timestamp)
 }

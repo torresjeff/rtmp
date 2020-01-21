@@ -123,19 +123,20 @@ func (chunkHandler *ChunkHandler) ReadChunkHeader() (ch ChunkHeader, n int, err 
 
 	csid := ch.BasicHeader.ChunkStreamID
 
-	// If this is a type 0 chunk header, it contains an absolute timestamp. Set the clock to that absolute timestamp.
-	// Otherwise add the delta to the clock
-	// TODO: handle overflows
+	// If this is a type 0 chunk header, it contains an absolute timestamp. Set the elapsed time to that absolute timestamp.
+	// Otherwise add the delta to the elapsed time
 	if ch.BasicHeader.FMT == ChunkType0 {
 		if isExtendedTimestamp {
 			ch.ElapsedTime = ch.ExtendedTimestamp
 		} else {
 			ch.ElapsedTime = ch.MessageHeader.Timestamp
 		}
-	} else { // Other chunks have a timestamp delta
+	} else {
 		if isExtendedTimestamp {
+			// Handling overflows is unnecessary because Go automatically wraps around
 			ch.ElapsedTime = chunkHandler.prevChunkHeader[csid].ElapsedTime + ch.ExtendedTimestamp
 		} else {
+			// Handling overflows is unnecessary because Go automatically wraps around
 			ch.ElapsedTime = chunkHandler.prevChunkHeader[csid].ElapsedTime + ch.MessageHeader.Timestamp
 		}
 	}

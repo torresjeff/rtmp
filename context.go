@@ -16,8 +16,8 @@ type ContextStore interface {
 	StreamExists(streamKey string) bool
 	SetAvcSequenceHeaderForPublisher(streamKey string, payload []byte)
 	GetAvcSequenceHeaderForPublisher(streamKey string) []byte
-	SetAacSequenceHeaderForPublisher(key string, payload []byte)
-	GetAacSequenceHeaderForPublisher(key string) []byte
+	SetAacSequenceHeaderForPublisher(streamKey string, payload []byte)
+	GetAacSequenceHeaderForPublisher(streamKey string) []byte
 }
 
 type InMemoryContext struct {
@@ -121,7 +121,6 @@ func (c *InMemoryContext) SetAvcSequenceHeaderForPublisher(streamKey string, pay
 func (c *InMemoryContext) GetAvcSequenceHeaderForPublisher(streamKey string) []byte {
 	c.seqMutex.RLock()
 	defer c.seqMutex.RUnlock()
-	// TODO: handle cases where cache doesn't exist
 	return c.avcSequenceHeaderCache[streamKey]
 }
 
@@ -134,6 +133,5 @@ func (c *InMemoryContext) SetAacSequenceHeaderForPublisher(streamKey string, pay
 func (c *InMemoryContext) GetAacSequenceHeaderForPublisher(streamKey string) []byte {
 	c.seqMutex.RLock()
 	defer c.seqMutex.RUnlock()
-	// TODO: handle cases where cache doesn't exist
 	return c.aacSequenceHeaderCache[streamKey]
 }

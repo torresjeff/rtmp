@@ -175,7 +175,7 @@ func generateConnectResponseSuccess(csID uint32) []byte {
 	connectResponseSuccessMessage := make([]byte, 12, 300)
 	//---- HEADER ----//
 	// fmt = 0 and csid = 3 encoded in 1 byte
-	// TODO: why does Twitch send csId = 3? is it because it is replying to the connect() request which sent csID = 3?
+	// why does Twitch send csId = 3? is it because it is replying to the connect() request which sent csID = 3?
 	// TODO: handle potential cases where csID is more than 1 byte
 	connectResponseSuccessMessage[0] = byte(csID)
 

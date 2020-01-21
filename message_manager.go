@@ -223,7 +223,7 @@ func (m *MessageManager) handleCommandAmf0(csID uint32, streamID uint32, command
 		byteLength = amf0.Size(startTime)
 		payload = payload[byteLength:]
 
-		// TODO: the spec specifies that, the next values should be duration (number), and reset (bool), but VLC doesn't send them
+		// the spec specifies that, the next values should be duration (number), and reset (bool), but VLC doesn't send them
 		m.session.onPlay(streamKey.(string), startTime.(float64))
 	case "FCUnpublish":
 		streamKey, _ := amf0.Decode(payload)
@@ -250,10 +250,10 @@ func (m *MessageManager) handleDataMessage(dataType uint8, payload []byte) error
 	case DataMessageAMF3:
 		// TODO: implement AMF3
 		fmt.Println("message manager: received AMF3 data message, but couldn't process it because AMF3 encoding/decoding is not implemented")
+		return nil
 	default:
 		return errors.New(fmt.Sprintf("message manager: received unknown data message type, type: %d", dataType))
 	}
-	return nil
 }
 
 func (m *MessageManager) handleDataMessageAmf0(dataName string, payload []byte) error {
@@ -370,7 +370,6 @@ func (m *MessageManager) sendAudio(audio []byte, timestamp uint32) {
 		// Extended timestamp
 		binary.BigEndian.PutUint32(header[8:], timestamp)
 
-		// TODO: make stream ID constant for audio/video messages
 		binary.LittleEndian.PutUint32(header[12:], 1)
 	} else {
 		header = make([]byte, 12)
@@ -391,7 +390,6 @@ func (m *MessageManager) sendAudio(audio []byte, timestamp uint32) {
 		// Type ID
 		header[7] = AudioMessage
 
-		// TODO: make stream ID constant for audio/video messages
 		binary.LittleEndian.PutUint32(header[8:], 1)
 	}
 	//fmt.Println("audio timestamp =", timestamp)
@@ -432,7 +430,6 @@ func (m *MessageManager) sendVideo(video []byte, timestamp uint32) {
 		// Extended timestamp
 		binary.BigEndian.PutUint32(header[8:], timestamp)
 
-		// TODO: make stream ID constant for audio/video messages
 		binary.LittleEndian.PutUint32(header[12:], 1)
 	} else {
 		header = make([]byte, 12)
@@ -452,7 +449,6 @@ func (m *MessageManager) sendVideo(video []byte, timestamp uint32) {
 		// Type ID
 		header[7] = VideoMessage
 
-		// TODO: make stream ID constant for audio/video messages
 		binary.LittleEndian.PutUint32(header[8:], 1)
 	}
 	err := m.chunkHandler.send(header, video)
@@ -486,7 +482,10 @@ func (m *MessageManager) sendStatusMessage(level string, code string, descriptio
 	}
 
 	message := generateStatusMessage(0, 0, infoObject)
-	m.chunkHandler.sendBytes(message)
+	_, err := m.chunkHandler.sendBytes(message)
+	if err != nil {
+		fmt.Println("error sendingi status message:", err)
+	}
 }
 
 func generateDataMessageRtmpSampleAccess(audio bool, video bool) []byte {
@@ -521,5 +520,15 @@ func generateDataMessageRtmpSampleAccess(audio bool, video bool) []byte {
 	return message
 }
 
+func (m *MessageManager) sendOnFCPublish(csID uint32, transactionID float64, streamKey string) {
+	message := generateOnFCPublishMessage(csID, transactionID, streamKey)
+	_, err := m.chunkHandler.sendBytes(message)
+	if err != nil {
+		fmt.Println("error sending onFCPublish", err)
+	}
+}
 
-
+func (m *MessageManager) sendCreateStreamResponse(csID uint32, transactionID float64, data map[string]interface{}) {
+	message := generateCreateStreamResponse(csID, transactionID, data)
+	m.chunkHandler.sendBytes(message)
+}
