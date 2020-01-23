@@ -481,6 +481,11 @@ func (m *MessageManager) sendVideo(video []byte, timestamp uint32) {
 	//fmt.Println("bytes written:", n)
 }
 
+func (m *MessageManager) sendMetadata(metadata map[string]interface{}) {
+	message := generateMetadataMessage(metadata, m.streamID)
+	m.chunkHandler.send(message[:12], message[12:])
+}
+
 func (m *MessageManager) sendPlayStart(info map[string]interface{}) {
 	message := generateStatusMessage(4, 1, info)
 	m.chunkHandler.sendBytes(message)

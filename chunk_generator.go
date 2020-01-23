@@ -176,7 +176,6 @@ func generateConnectResponseSuccess(csID uint32) []byte {
 	//---- HEADER ----//
 	// fmt = 0 and csid = 3 encoded in 1 byte
 	// why does Twitch send csId = 3? is it because it is replying to the connect() request which sent csID = 3?
-	// TODO: handle potential cases where csID is more than 1 byte
 	connectResponseSuccessMessage[0] = byte(csID)
 
 	// timestamp (3 bytes) is set to 0 so bytes 1-3 are unmodified (they're already zero-initialized)
@@ -224,7 +223,6 @@ func generateOnFCPublishMessage(csID uint32, transactionID float64, streamKey st
 	onFCPublishMessage := make([]byte, 12, 180)
 	//---- HEADER ----//
 	// if csid = 3, does this mean these are not control messages/commands?
-	// TODO: handle potential cases where csID is more than 1 byte
 	onFCPublishMessage[0] = byte(csID)
 
 	// Leave timestamp at 0 (bytes 1-3)
@@ -262,7 +260,6 @@ func generateCreateStreamResponse(csID uint32, transactionID float64, commandObj
 	createStreamResponseMessage := make([]byte, 12, 50)
 	//---- HEADER ----//
 	// if csid = 3, does this mean these are not control messages/commands?
-	// TODO: handle potential cases where csID is more than 1 byte
 	createStreamResponseMessage[0] = byte(csID)
 
 	// Leave timestamp at 0 (bytes 1-3)
@@ -296,7 +293,6 @@ func generateConnectRequest(csID int, transactionID int, info map[string]interfa
 	connectRequestMessage := make([]byte, 12, 12 + bodyLength)
 	//---- HEADER ----//
 	// if csid = 3, does this mean these are not control messages/commands?
-	// TODO: handle potential cases where csID is more than 1 byte
 	connectRequestMessage[0] = byte(csID)
 
 	// Leave timestamp at 0 (bytes 1-3)
@@ -329,7 +325,6 @@ func generateCreateStreamRequest(transactionID int) []byte {
 
 	//---- HEADER ----//
 	// if csid = 3, does this mean these are not control messages/commands?
-	// TODO: handle potential cases where csID is more than 1 byte
 	createStreamMessage[0] = byte(3)
 
 	// Leave timestamp delta at 0 (bytes 1-3)
@@ -350,6 +345,37 @@ func generateCreateStreamRequest(transactionID int) []byte {
 	return createStreamMessage
 }
 
+func generateMetadataMessage(metadata map[string]interface{}, streamID uint32) []byte {
+	setDataFrame, _ := amf0.Encode("@setDataFrame")
+	onMetadata, _ := amf0.Encode("onMetadata")
+	metadataObj, _ := amf0.Encode(amf0.ECMAArray(metadata))
+	bodyLength := len(setDataFrame) + len(onMetadata) + len(metadataObj)
+	metadataMessage := make([]byte, 12, 12 + bodyLength)
+
+	//---- HEADER ----//
+	metadataMessage[0] = byte(4)
+
+	// Leave timestamp at 0 (bytes 1-3)
+	// TODO: what to do to avoid resetting media timestamp with a metadata message? This is a type 0 chunk, meaning it will reset the timestamp...
+
+	// Set body size (bytes 4-6) to bodyLength
+	metadataMessage[4] = byte((bodyLength >> 16) & 0xFF)
+	metadataMessage[5] = byte((bodyLength >> 8) & 0xFF)
+	metadataMessage[6] = byte(bodyLength)
+
+	// Set type to AMF0 Data Message (18)
+	metadataMessage[7] = DataMessageAMF0
+
+	// Set stream ID
+	binary.LittleEndian.PutUint32(metadataMessage[8:], streamID)
+
+	//---- BODY ----//
+	metadataMessage = append(metadataMessage, setDataFrame...)
+	metadataMessage = append(metadataMessage, onMetadata...)
+	metadataMessage = append(metadataMessage, metadataObj...)
+	return metadataMessage
+}
+
 func generatePlayRequest(streamKey string, streamID uint32) []byte {
 	play, _ := amf0.Encode("play")
 	tID, _ := amf0.Encode(0)
@@ -361,7 +387,6 @@ func generatePlayRequest(streamKey string, streamID uint32) []byte {
 
 	//---- HEADER ----//
 	// if csid = 3, does this mean these are not control messages/commands?
-	// TODO: handle potential cases where csID is more than 1 byte
 	playMessage[0] = byte(3)
 
 	// Leave timestamp at 0 (bytes 1-3)

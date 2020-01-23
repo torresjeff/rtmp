@@ -8,7 +8,6 @@ import (
 	"github.com/torresjeff/rtmp/video"
 	"io"
 	"net"
-	"strings"
 )
 
 type AudioCallback func(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, payload []byte, timestamp uint32)
@@ -400,84 +399,8 @@ func (session *Session) onMetadata(metadata map[string]interface{}) {
 		return
 	}
 
-	// Put all keys in lowercase to handle different formats for each client uniformly
-	for key, val := range metadata {
-		metadata[strings.ToLower(key)] = val
-	}
-
-	if val, exists := metadata["duration"]; exists {
-		session.clientMetadata.duration = val.(float64)
-	}
-	if val, exists := metadata["filesize"]; exists {
-		session.clientMetadata.fileSize = val.(float64)
-	}
-	if val, exists := metadata["width"]; exists {
-		session.clientMetadata.width = val.(float64)
-	}
-	if val, exists := metadata["height"]; exists {
-		session.clientMetadata.height = val.(float64)
-	}
-	if val, exists := metadata["videocodecid"]; exists {
-		switch val.(type) {
-		case float64:
-			session.clientMetadata.nVideoCodecID = val.(float64)
-		case string:
-			session.clientMetadata.videoCodecID = val.(string)
-		}
-	}
-	if val, exists := metadata["videodatarate"]; exists {
-		session.clientMetadata.videoDataRate = val.(float64)
-	}
-	if val, exists := metadata["framerate"]; exists {
-		session.clientMetadata.frameRate = val.(float64)
-	}
-	if val, exists := metadata["audiocodecid"]; exists {
-		switch val.(type) {
-		case float64:
-			session.clientMetadata.nAudioCodecID = val.(float64)
-		case string:
-			session.clientMetadata.audioCodecID = val.(string)
-		}
-	}
-	if val, exists := metadata["audiodatarate"]; exists {
-		session.clientMetadata.audioDataRate = val.(float64)
-	}
-	if val, exists := metadata["audiosamplerate"]; exists {
-		session.clientMetadata.audioSampleRate = val.(float64)
-	}
-	if val, exists := metadata["audiosamplesize"]; exists {
-		session.clientMetadata.audioSampleSize = val.(float64)
-	}
-	if val, exists := metadata["audiochannels"]; exists {
-		session.clientMetadata.audioChannels = val.(float64)
-	}
-	if val, exists := metadata["stereo"]; exists {
-		session.clientMetadata.sound.stereoSound = val.(bool)
-	}
-	if val, exists := metadata["2.1"]; exists {
-		session.clientMetadata.sound.twoPointOneSound = val.(bool)
-	}
-	if val, exists := metadata["3.1"]; exists {
-		session.clientMetadata.sound.threePointOneSound = val.(bool)
-	}
-	if val, exists := metadata["4.0"]; exists {
-		session.clientMetadata.sound.fourPointZeroSound = val.(bool)
-	}
-	if val, exists := metadata["4.1"]; exists {
-		session.clientMetadata.sound.fourPointOneSound = val.(bool)
-	}
-	if val, exists := metadata["5.1"]; exists {
-		session.clientMetadata.sound.fivePointOneSound = val.(bool)
-	}
-	if val, exists := metadata["7.1"]; exists {
-		session.clientMetadata.sound.sevenPointOneSound = val.(bool)
-	}
-	if val, exists := metadata["encoder"]; exists {
-		session.clientMetadata.encoder = val.(string)
-	}
-
 	// TODO: broadcast metadata to client
-
+	session.broadcaster.BroadcastMetadata(session.streamKey, metadata)
 	//if config.Debug {
 	//	fmt.Printf("clientMetadata %+v", session.clientMetadata)
 	//}
@@ -603,4 +526,8 @@ func (session *Session) SendAudio(audio []byte, timestamp uint32) {
 
 func (session *Session) SendVideo(video []byte, timestamp uint32) {
 	session.messageManager.sendVideo(video, timestamp)
+}
+
+func (session *Session) SendMetadata(metadata map[string]interface{}) {
+	session.messageManager.sendMetadata(metadata)
 }

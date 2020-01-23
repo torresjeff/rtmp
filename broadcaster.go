@@ -6,6 +6,7 @@ import "fmt"
 type Subscriber interface {
 	SendAudio(audio []byte, timestamp uint32)
 	SendVideo(video []byte, timestamp uint32)
+	SendMetadata(metadata map[string]interface{})
 	GetID() uint32
 	SendEndOfStream()
 }
@@ -92,4 +93,17 @@ func (b *Broadcaster) BroadcastEndOfStream(streamKey string) {
 	for _, sub := range subscribers {
 		sub.SendEndOfStream()
 	}
+}
+
+func (b *Broadcaster) BroadcastMetadata(streamKey string, metadata map[string]interface{}) error {
+	subscribers, err := b.context.GetSubscribersForStream(streamKey)
+	if err != nil {
+		fmt.Println("broadcaster: BroadcastVideo: error getting subscribers for stream, " + err.Error())
+		return err
+	}
+
+	for _, sub := range subscribers {
+		sub.SendMetadata(metadata)
+	}
+	return nil
 }
