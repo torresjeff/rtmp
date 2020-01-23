@@ -38,9 +38,14 @@ const (
 	AggregateMessage = 22
 )
 
+const (
+	EventStreamBegin uint16 = 0
+)
+
 type MessageManager struct {
 	session      MediaServer
 	chunkHandler *ChunkHandler
+	streamID     uint32
 }
 
 func NewMessageManager(session MediaServer, chunkHandler *ChunkHandler) *MessageManager {
@@ -83,7 +88,9 @@ func (m *MessageManager) interpretMessage(header ChunkHeader, payload []byte) er
 	case SetChunkSize, AbortMessage, Ack, WindowAckSize, SetPeerBandwidth:
 		return m.handleControlMessage(&header, payload)
 	case UserControlMessage:
-		return m.handleUserControlMessage(&header, payload)
+		// First 2 bytes of payload contain event type
+		eventType := binary.BigEndian.Uint16(payload[:2])
+		return m.handleUserControlMessage(&header, eventType, payload[2:])
 	case CommandMessageAMF0, CommandMessageAMF3:
 		return m.handleCommandMessage(header.BasicHeader.ChunkStreamID, header.MessageHeader.MessageStreamID, header.MessageHeader.MessageTypeID, payload)
 	case DataMessageAMF0, DataMessageAMF3:
@@ -132,10 +139,10 @@ func (m *MessageManager) handleControlMessage(header *ChunkHeader, payload []byt
 		m.session.onSetWindowAckSize(windowAckSize)
 		return nil
 	case SetPeerBandwidth:
-		// window ack size is in the first 4 bytes
+		// window ack size is in the first 4 bytes: 0-3
 		windowAckSize := binary.BigEndian.Uint32(payload[:4])
-		// limit is the 5th byte
-		limitType := payload[5]
+		// limit is the 5th byte: 4
+		limitType := payload[4]
 
 		m.session.onSetBandwidth(windowAckSize, limitType)
 		return nil
@@ -144,9 +151,16 @@ func (m *MessageManager) handleControlMessage(header *ChunkHeader, payload []byt
 	}
 }
 
-func (m *MessageManager) handleUserControlMessage(header *ChunkHeader, payload []byte) error {
-	// TODO: implement control messages
-	return nil
+func (m *MessageManager) handleUserControlMessage(header *ChunkHeader, eventType uint16, payload []byte) error {
+	switch eventType {
+	case EventStreamBegin:
+		m.streamID = binary.BigEndian.Uint32(payload)
+		m.session.onStreamBegin()
+		return nil
+	default:
+		fmt.Println("message manager: user control message not implemented, event type:", eventType)
+		return nil
+	}
 }
 
 func (m *MessageManager) handleCommandMessage(csID uint32, streamID uint32, commandType uint8, payload []byte) error {
@@ -233,6 +247,12 @@ func (m *MessageManager) handleCommandAmf0(csID uint32, streamID uint32, command
 	case "deleteStream":
 		streamID, _ := amf0.Decode(payload)
 		m.session.onDeleteStream(commandObject, streamID.(float64))
+	case "_result":
+		info,  _ := amf0.Decode(payload)
+		m.session.onResult(info.(map[string]interface{}))
+	case "onStatus":
+		info,  _ := amf0.Decode(payload)
+		m.session.onStatus(info.(map[string]interface{}))
 	default:
 		fmt.Println("message manager: received command " + commandName + ", but couldn't handle it because no implementation is defined")
 	}
@@ -268,9 +288,9 @@ func (m *MessageManager) handleDataMessageAmf0(dataName string, payload []byte) 
 		// Handle cases where the metadata comes as an object or as an ECMAArray
 		switch metadata.(type) {
 		case amf0.ECMAArray:
-			m.session.onSetDataFrame(metadata.(amf0.ECMAArray))
+			m.session.onMetadata(metadata.(amf0.ECMAArray))
 		case map[string]interface{}:
-			m.session.onSetDataFrame(metadata.(map[string]interface{}))
+			m.session.onMetadata(metadata.(map[string]interface{}))
 		}
 		return nil
 	default:
@@ -531,4 +551,20 @@ func (m *MessageManager) sendOnFCPublish(csID uint32, transactionID float64, str
 func (m *MessageManager) sendCreateStreamResponse(csID uint32, transactionID float64, data map[string]interface{}) {
 	message := generateCreateStreamResponse(csID, transactionID, data)
 	m.chunkHandler.sendBytes(message)
+}
+
+func (m *MessageManager) requestConnect(info map[string]interface{}) error {
+	message := generateConnectRequest(3, 1, info)
+	err := m.chunkHandler.send(message[:12], message[12:])
+	return err
+}
+
+func (m *MessageManager) requestCreateStream(transactionID int) {
+	message := generateCreateStreamRequest(transactionID)
+	m.chunkHandler.send(message[:8], message[8:])
+}
+
+func (m *MessageManager) requestPlay(streamKey string) {
+	message := generatePlayRequest(streamKey, m.streamID)
+	m.chunkHandler.send(message[:12], message[12:])
 }

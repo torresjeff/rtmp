@@ -11,6 +11,10 @@ import (
 	"strings"
 )
 
+type AudioCallback func(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, payload []byte, timestamp uint32)
+type VideoCallback func(frameType video.FrameType, codec video.Codec, payload []byte, timestamp uint32)
+type MetadataCallback func(metadata map[string]interface{})
+
 type surroundSound struct {
 	stereoSound bool
 	twoPointOneSound bool
@@ -42,8 +46,9 @@ type clientMetadata struct {
 	encoder         string
 }
 
-// Media Server interface defines the callbacks that are called when a message is received
+// Media Server interface defines the callbacks that are called when a message is received by the server
 type MediaServer interface {
+	// Server callbacks
 	onSetChunkSize(size uint32)
 	onAbortMessage(chunkStreamId uint32)
 	onAck(sequenceNumber uint32)
@@ -54,13 +59,19 @@ type MediaServer interface {
 	onFCPublish(csID uint32, transactionId float64, args map[string]interface{}, streamKey string)
 	onCreateStream(csID uint32, transactionId float64, data map[string]interface{})
 	onPublish(transactionId float64, args map[string]interface{}, streamKey string, publishingType string)
-	onSetDataFrame(metadata map[string]interface{})
 	onFCUnpublish(args map[string]interface{}, streamKey string)
 	onDeleteStream(args map[string]interface{}, streamID float64)
 	onCloseStream(csID uint32, transactionId float64, args map[string]interface{})
 	onAudioMessage(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, payload []byte, timestamp uint32)
 	onVideoMessage(frameType video.FrameType, codec video.Codec, payload []byte, timestamp uint32)
+	onMetadata(metadata map[string]interface{})
 	onPlay(streamKey string, startTime float64)
+
+	// TODO: separate into two distinct interfaces: client, server (maybe 3 for common functions like onAck, onSetWindowAckSize, onSetChunkSize, etc.)
+	// Client callbacks
+	onResult(info map[string]interface{})
+	onStatus(info map[string]interface{})
+	onStreamBegin()
 }
 
 // Represents a connection made with the RTMP server where messages are exchanged between client/server.
@@ -74,6 +85,11 @@ type Session struct {
 	broadcaster    *Broadcaster // broadcasts audio/video messages to playback clients subscribed to a stream
 	active         bool         // true if the session is active
 
+	// Callbacks (for RTMP clients)
+	OnAudio    AudioCallback
+	OnVideo    VideoCallback
+	OnMetadata MetadataCallback
+
 	// Interprets messages, calling the appropriate callback on the session. Also in charge of sending messages.
 	messageManager *MessageManager
 
@@ -85,8 +101,10 @@ type Session struct {
 	typeOfStream   string
 	streamKey      string // used to identify user
 	publishingType string
-	isPublisher bool
-	isPlayer bool
+	isPublisher    bool
+	isPlayer       bool
+	isClient       bool
+	serverAddress  string
 }
 
 func NewSession(sessionID uint32, conn *net.Conn, b *Broadcaster) *Session {
@@ -97,13 +115,34 @@ func NewSession(sessionID uint32, conn *net.Conn, b *Broadcaster) *Session {
 		socketw: bufio.NewWriterSize(*conn, config.BuffioSize),
 		broadcaster:       b,
 		active:            true,
+		isClient: false,
 	}
 	chunkHandler := NewChunkHandler(session.socketr, session.socketw)
 	session.messageManager = NewMessageManager(session, chunkHandler)
 	return session
 }
 
-// Run performs the initial handshake and starts receiving streams of data.
+func NewClientSession(sessionID uint32, conn *net.Conn, app string, streamKey string, audioCallback AudioCallback, videoCallback VideoCallback, metadataCallback MetadataCallback) *Session {
+	session := &Session{
+		sessionID:     sessionID,
+		conn:          *conn,
+		socketr:       bufio.NewReaderSize(*conn, config.BuffioSize),
+		socketw:       bufio.NewWriterSize(*conn, config.BuffioSize),
+		isClient:      true,
+		app:           app,
+		streamKey:     streamKey,
+		OnAudio:       audioCallback,
+		OnVideo:       videoCallback,
+		OnMetadata:    metadataCallback,
+		active:        true,
+	}
+	session.tcUrl = "rtmp://" + (*conn).RemoteAddr().String() + "/" + app
+	chunkHandler := NewChunkHandler(session.socketr, session.socketw)
+	session.messageManager = NewMessageManager(session, chunkHandler)
+	return session
+}
+
+// Run performs the initial handshake and starts receiving streams of data. This is used for servers only. For clients, use StartPlayback().
 func (session *Session) Run() error {
 	// Perform handshake
 	err := Handshake(session.socketr, session.socketw)
@@ -155,6 +194,124 @@ func (session *Session) Run() error {
 	}
 }
 
+func (session *Session) StartPlayback() error {
+	err := ClientHandshake(session.socketr, session.socketw)
+	if err != nil {
+		return err
+	}
+	if config.Debug {
+		fmt.Println("client handshake completed successfully")
+	}
+
+	info := map[string]interface{}{
+		"app": session.app,
+		"flashVer": "LNX 9,0,124,2",
+		"tcUrl": session.tcUrl,
+		"fpad": false,
+		"capabilities": 15,
+		"audioCodecs": 4071,
+		"videoCodecs": 252,
+		"videoFunction": 1,
+	}
+
+	//n, err := session.socketw.Write([]byte("Hello, world!"))
+	//if err != nil {
+	//	fmt.Println("error writing hello, world!", err)
+	//}
+	//err = session.socketw.Flush()
+	//if err != nil {
+	//	fmt.Println("error flushing hello, world!", err)
+	//}
+	//fmt.Println("bytes written:", n)
+
+	fmt.Println("now requesting connect")
+	session.messageManager.sendSetChunkSize(config.DefaultChunkSize)
+	// After handshake, request connection to an application
+	err = session.messageManager.requestConnect(info)
+	if err != nil {
+		return err
+	}
+
+	// Start reading chunks
+	for {
+		if session.active {
+			if err = session.messageManager.nextMessage(); err == io.EOF {
+				fmt.Println("client session: closing connection")
+				return session.conn.Close()
+			} else if err != nil {
+				fmt.Println("client session: closing connection")
+				session.conn.Close()
+				return err
+			}
+		} else {
+			// Session is over, finish the session
+			return session.conn.Close()
+		}
+	}
+}
+
+func (session *Session) onResult(info map[string]interface{}) {
+	level, exists := info["level"]
+	if !exists {
+		fmt.Println("session: onResult: no 'level' in info object")
+		return
+	}
+	code, exists := info["code"]
+	if !exists {
+		fmt.Println("session: onResult: no 'code' in info object")
+		return
+	}
+
+	if level == "error" {
+		fmt.Printf("session: onResult error: %+v\n", info)
+		session.active = false
+		return
+	}
+	if level == "warning" {
+		fmt.Printf("session: onResult warning: %+v\n", info)
+	}
+
+
+	switch code {
+	case "NetConnection.Connect.Success":
+		session.messageManager.requestCreateStream(2)
+	}
+}
+
+func (session *Session) onStreamBegin() {
+	session.messageManager.requestPlay(session.streamKey)
+}
+
+func (session *Session) onStatus(info map[string]interface{}) {
+	level, exists := info["level"]
+	if !exists {
+		fmt.Println("session: onStatus: no 'level' in info object")
+		return
+	}
+	code, exists := info["code"]
+	if !exists {
+		fmt.Println("session: onStatus: no 'code' in info object")
+		return
+	}
+	if level == "error" {
+		fmt.Printf("session: onStatus error: %s, %+v\n", code, info)
+		session.active = false
+		return
+	}
+
+	if level == "warning" {
+		fmt.Printf("session: onStatus warning: %s, %+v\n", code, info)
+	}
+
+	switch code {
+	case "NetStream.Play.Start":
+		fmt.Println("received NetStream.Play.Start")
+		// TODO: set up transcoders
+	default:
+		fmt.Println("session: onStatus: received unknown code:", code)
+	}
+}
+
 func (session *Session) GetID() uint32 {
 	return session.sessionID
 }
@@ -163,6 +320,7 @@ func (session *Session) onWindowAckSizeReached(sequenceNumber uint32) {
 }
 
 func (session *Session) onConnect(csID uint32, transactionID float64, data map[string]interface{}) {
+	fmt.Println("onConnect called")
 	session.storeMetadata(data)
 	// If the app name to connect is App (whatever the user specifies in the config, ie. "app", "app/publish"),
 	if session.app == config.App {
@@ -230,7 +388,18 @@ func (session *Session) onSetBandwidth(windowAckSize uint32, limitType uint8) {
 	session.messageManager.SetBandwidth(windowAckSize, limitType)
 }
 
-func (session *Session) onSetDataFrame(metadata map[string]interface{}) {
+func (session *Session) onMetadata(metadata map[string]interface{}) {
+	// This is not for the RTMP server. RTMP servers don't have the option to specify callback. Only RTMP clients use this for now
+	if session.OnMetadata != nil {
+		session.OnMetadata(metadata)
+		return
+	}
+
+	// If this is a client session, no further processing should be done. i.e: no need to broadcast, since we're only receiving data.
+	if session.isClient {
+		return
+	}
+
 	// Put all keys in lowercase to handle different formats for each client uniformly
 	for key, val := range metadata {
 		metadata[strings.ToLower(key)] = val
@@ -307,6 +476,8 @@ func (session *Session) onSetDataFrame(metadata map[string]interface{}) {
 		session.clientMetadata.encoder = val.(string)
 	}
 
+	// TODO: broadcast metadata to client
+
 	//if config.Debug {
 	//	fmt.Printf("clientMetadata %+v", session.clientMetadata)
 	//}
@@ -355,6 +526,18 @@ func (session *Session) onCloseStream(csID uint32, transactionId float64, args m
 // audioData is the full payload (it has the audio headers at the beginning of the payload), for easy forwarding
 // If format == audio.AAC, audioData will contain AACPacketType at index 1
 func (session *Session) onAudioMessage(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, payload []byte, timestamp uint32) {
+	// This is not for the RTMP server. RTMP servers don't have the option to specify callback. Only RTMP clients use this for now
+	if session.OnAudio != nil {
+		session.OnAudio(format, sampleRate, sampleSize, channels, payload, timestamp)
+		return
+	}
+
+	// If this is a client session, no further processing should be done. i.e: no need to broadcast, since we're only receiving data.
+	// TODO: maybe caching the AAC/ACV sequence headers will be necessary
+	if session.isClient {
+		return
+	}
+
 	// Cache aac sequence header to send to play back clients when they connect
 	if format == audio.AAC && audio.AACPacketType(payload[1]) == audio.AACSequenceHeader {
 		session.broadcaster.SetAacSequenceHeaderForPublisher(session.streamKey, payload)
@@ -364,6 +547,18 @@ func (session *Session) onAudioMessage(format audio.Format, sampleRate audio.Sam
 
 // videoData is the full payload (it has the video headers at the beginning of the payload), for easy forwarding
 func (session *Session) onVideoMessage(frameType video.FrameType, codec video.Codec, payload []byte, timestamp uint32) {
+	// This is not for the RTMP server. RTMP servers don't have the option to specify callback. Only RTMP clients use this for now
+	if session.OnVideo != nil {
+		session.OnVideo(frameType, codec, payload, timestamp)
+		return
+	}
+
+	// If this is a client session, no further processing should be done. i.e: no need to broadcast, since we're only receiving data.
+	// TODO: maybe caching the AAC/ACV sequence headers will be necessary
+	if session.isClient {
+		return
+	}
+
 	// cache avc sequence header to send to playback clients when they connect
 	if codec == video.H264 && video.AVCPacketType(payload[1]) == video.AVCSequenceHeader {
 		session.broadcaster.SetAvcSequenceHeaderForPublisher(session.streamKey, payload)

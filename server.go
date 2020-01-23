@@ -19,7 +19,7 @@ func (server *Server) Run() error {
 
 	tcpAddress, err := net.ResolveTCPAddr("tcp", server.Addr);
 	if err != nil {
-		err = fmt.Errorf("rtmp: Run server error: %s", err)
+		err = fmt.Errorf("rtmp: error resolving tcp address: %s", err)
 		return err
 	}
 

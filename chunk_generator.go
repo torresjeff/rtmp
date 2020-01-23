@@ -287,6 +287,106 @@ func generateCreateStreamResponse(csID uint32, transactionID float64, commandObj
 	return createStreamResponseMessage
 }
 
+func generateConnectRequest(csID int, transactionID int, info map[string]interface{}) []byte {
+	connect, _ := amf0.Encode("connect")
+	tID, _ := amf0.Encode(transactionID)
+	cmdObj, _ := amf0.Encode(info)
+	bodyLength := len(connect) + len(tID) + len(cmdObj)
+
+	connectRequestMessage := make([]byte, 12, 12 + bodyLength)
+	//---- HEADER ----//
+	// if csid = 3, does this mean these are not control messages/commands?
+	// TODO: handle potential cases where csID is more than 1 byte
+	connectRequestMessage[0] = byte(csID)
+
+	// Leave timestamp at 0 (bytes 1-3)
+
+	// Set body size (bytes 4-6) to bodyLength
+	connectRequestMessage[4] = byte((bodyLength >> 16) & 0xFF)
+	connectRequestMessage[5] = byte((bodyLength >> 8) & 0xFF)
+	connectRequestMessage[6] = byte(bodyLength)
+
+	// Set type to AMF0 command (20)
+	connectRequestMessage[7] = CommandMessageAMF0
+
+	// Leave stream ID at 0 (bytes 8-11)
+	// NetConnection is the default communication channel, which has a stream ID 0. Protocol and a few command messages, including createStream, use the default communication channel.
+
+	//---- BODY ----//
+	connectRequestMessage = append(connectRequestMessage, connect...)
+	connectRequestMessage = append(connectRequestMessage, tID...)
+	connectRequestMessage = append(connectRequestMessage, cmdObj...)
+
+	return connectRequestMessage
+}
+
+func generateCreateStreamRequest(transactionID int) []byte {
+	createStream, _ := amf0.Encode("createStream")
+	tID, _ := amf0.Encode(transactionID)
+	cmdObj, _ := amf0.Encode(nil)
+	bodyLength := len(createStream) + len(tID) + len(cmdObj)
+	createStreamMessage := make([]byte, 8, 8 + bodyLength)
+
+	//---- HEADER ----//
+	// if csid = 3, does this mean these are not control messages/commands?
+	// TODO: handle potential cases where csID is more than 1 byte
+	createStreamMessage[0] = byte(3)
+
+	// Leave timestamp delta at 0 (bytes 1-3)
+
+	// Set body size (bytes 4-6) to bodyLength
+	createStreamMessage[4] = byte((bodyLength >> 16) & 0xFF)
+	createStreamMessage[5] = byte((bodyLength >> 8) & 0xFF)
+	createStreamMessage[6] = byte(bodyLength)
+
+	// Set type to AMF0 command (20)
+	createStreamMessage[7] = CommandMessageAMF0
+
+	//---- BODY ----//
+	createStreamMessage = append(createStreamMessage, createStream...)
+	createStreamMessage = append(createStreamMessage, tID...)
+	createStreamMessage = append(createStreamMessage, cmdObj...)
+
+	return createStreamMessage
+}
+
+func generatePlayRequest(streamKey string, streamID uint32) []byte {
+	play, _ := amf0.Encode("play")
+	tID, _ := amf0.Encode(0)
+	cmdObj, _ := amf0.Encode(nil)
+	streamName, _ := amf0.Encode(streamKey)
+	start, _ := amf0.Encode(-2000)
+	bodyLength := len(play) + len(tID) + len(cmdObj) + len(streamName) + len(start)
+	playMessage := make([]byte, 12, 12 + bodyLength)
+
+	//---- HEADER ----//
+	// if csid = 3, does this mean these are not control messages/commands?
+	// TODO: handle potential cases where csID is more than 1 byte
+	playMessage[0] = byte(3)
+
+	// Leave timestamp at 0 (bytes 1-3)
+
+	// Set body size (bytes 4-6) to bodyLength
+	playMessage[4] = byte((bodyLength >> 16) & 0xFF)
+	playMessage[5] = byte((bodyLength >> 8) & 0xFF)
+	playMessage[6] = byte(bodyLength)
+
+	// Set type to AMF0 command (20)
+	playMessage[7] = CommandMessageAMF0
+
+	// Set stream ID
+	binary.LittleEndian.PutUint32(playMessage[8:], streamID)
+
+	//---- BODY ----//
+	playMessage = append(playMessage, play...)
+	playMessage = append(playMessage, tID...)
+	playMessage = append(playMessage, cmdObj...)
+	playMessage = append(playMessage, streamName...)
+	playMessage = append(playMessage, start...)
+
+	return playMessage
+}
+
 func generateStatusMessage(transactionID float64, streamID uint32, infoObject map[string]interface{}) []byte {
 
 	commandName, _ := amf0.Encode("onStatus")
