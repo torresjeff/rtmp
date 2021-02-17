@@ -9,6 +9,7 @@ import (
 
 type Server struct {
 	Addr string
+	// TODO: should probably add something like maxConns
 }
 
 // Run starts the server and listens for any incoming connections. If no Addr (host:port) has been assigned to the server, ":1935" is used.
@@ -49,7 +50,7 @@ func (server *Server) Run() error {
 		}
 
 		// Create a new session from the new connection (basically a wrapper of the connection + other data)
-		sess := NewSession(rand.GenerateSessionId(), &conn, broadcaster)
+		sess := NewSession(rand.GenerateUuid(), &conn, broadcaster)
 
 		go func () {
 			err := sess.Run()

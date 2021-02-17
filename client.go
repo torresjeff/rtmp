@@ -64,7 +64,7 @@ func (c *Client) Connect(addr string) error {
 		fmt.Println("client: connected to", conn.RemoteAddr().String())
 	}
 
-	client := NewClientSession(rand.GenerateSessionId(), &conn, c.app, c.streamKey, c.OnAudio, c.OnVideo, c.OnMetadata)
+	client := NewClientSession(rand.GenerateUuid(), &conn, c.app, c.streamKey, c.OnAudio, c.OnVideo, c.OnMetadata)
 	err = client.StartPlayback()
 	if err != nil {
 		return err

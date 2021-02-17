@@ -7,7 +7,7 @@ type Subscriber interface {
 	SendAudio(audio []byte, timestamp uint32)
 	SendVideo(video []byte, timestamp uint32)
 	SendMetadata(metadata map[string]interface{})
-	GetID() uint32
+	GetID() string
 	SendEndOfStream()
 }
 
@@ -63,7 +63,7 @@ func (b *Broadcaster) BroadcastVideo(streamKey string, video []byte, timestamp u
 	return nil
 }
 
-func (b *Broadcaster) DestroySubscriber(streamKey string, sessionID uint32) error {
+func (b *Broadcaster) DestroySubscriber(streamKey string, sessionID string) error {
 	return b.context.DestroySubscriber(streamKey, sessionID)
 }
 

@@ -162,7 +162,7 @@ func sendS0S1S2(writer *bufio.Writer, c1 []byte) ([]byte, error) {
 // Generates an S1 message (random data)
 func generateRandomData(s1 []byte) error {
 	// the s1 byte array is zero-initialized, since we didn't modify it, we're sending our time as 0
-	err := rand.GenerateRandomDataFromBuffer(s1[8:])
+	err := rand.GenerateCryptoSafeRandomData(s1[8:])
 	if err != nil {
 		return err
 	}

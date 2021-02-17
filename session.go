@@ -76,7 +76,7 @@ type MediaServer interface {
 // Represents a connection made with the RTMP server where messages are exchanged between client/server.
 type Session struct {
 	MediaServer
-	sessionID      uint32
+	sessionID      string
 	conn           net.Conn
 	socketr        *bufio.Reader
 	socketw        *bufio.Writer
@@ -106,7 +106,7 @@ type Session struct {
 	serverAddress  string
 }
 
-func NewSession(sessionID uint32, conn *net.Conn, b *Broadcaster) *Session {
+func NewSession(sessionID string, conn *net.Conn, b *Broadcaster) *Session {
 	session := &Session{
 		sessionID:         sessionID,
 		conn:              *conn,
@@ -121,7 +121,7 @@ func NewSession(sessionID uint32, conn *net.Conn, b *Broadcaster) *Session {
 	return session
 }
 
-func NewClientSession(sessionID uint32, conn *net.Conn, app string, streamKey string, audioCallback AudioCallback, videoCallback VideoCallback, metadataCallback MetadataCallback) *Session {
+func NewClientSession(sessionID string, conn *net.Conn, app string, streamKey string, audioCallback AudioCallback, videoCallback VideoCallback, metadataCallback MetadataCallback) *Session {
 	session := &Session{
 		sessionID:     sessionID,
 		conn:          *conn,
@@ -311,7 +311,7 @@ func (session *Session) onStatus(info map[string]interface{}) {
 	}
 }
 
-func (session *Session) GetID() uint32 {
+func (session *Session) GetID() string {
 	return session.sessionID
 }
 

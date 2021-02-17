@@ -2,12 +2,11 @@ package rand
 
 import (
 	cryptoRand "crypto/rand"
-	"math/rand"
-
-	"time"
+	"github.com/google/uuid"
 )
 
-func GenerateRandomData(n int) ([]byte, error) {
+// GenerateCryptoSafeRandomDataN returns a slice of bytes of length n, filled with cryptographically-safe random data.
+func GenerateCryptoSafeRandomDataN(n int) ([]byte, error) {
 	b := make([]byte, n)
 	_, err := cryptoRand.Read(b)
 	if err != nil {
@@ -16,7 +15,8 @@ func GenerateRandomData(n int) ([]byte, error) {
 	return b, nil
 }
 
-func GenerateRandomDataFromBuffer(b []byte) error {
+// GenerateCryptoSafeRandomData fills b with cryptographically-safe random data.
+func GenerateCryptoSafeRandomData(b []byte) error {
 	_, err := cryptoRand.Read(b)
 	if err != nil {
 		return err
@@ -24,12 +24,8 @@ func GenerateRandomDataFromBuffer(b []byte) error {
 	return nil
 }
 
-var source rand.Source = rand.NewSource(time.Now().UnixNano())
-var generator *rand.Rand = rand.New(source)
 
-
-// Generates a unique ID when a session is created to identify it.
-func GenerateSessionId() uint32 {
-	// guarantee randomness with crypto/rand?
-	return generator.Uint32()
+// GenerateUuid returns a UUID in string format (including hyphens).
+func GenerateUuid() string {
+	return uuid.NewString()
 }
