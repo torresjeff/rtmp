@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"github.com/torresjeff/rtmp/config"
-	"github.com/torresjeff/rtmp/rand"
 	"go.uber.org/zap"
 	"net"
 )
 
 // Server represents the RTMP server, where a client/app can stream media to. The server listens for incoming connections.
 type Server struct {
-	Addr        string
+	Addr string
+	// TODO: create Logger interface to not depend on zap directly
 	Logger      *zap.Logger
 	Broadcaster *Broadcaster
 	// TODO: should probably add something like maxConns
@@ -48,11 +48,14 @@ func (s *Server) Listen() error {
 		s.Logger.Info(fmt.Sprint("[server] Accepted incoming connection from ", conn.RemoteAddr().String()))
 
 		go func(conn net.Conn) {
+			// TODO: defer close connection here instead, Session shouldn't worry about closing connection at every possible error.
+
+			socketr := bufio.NewReaderSize(conn, config.BuffioSize)
+			socketw := bufio.NewWriterSize(conn, config.BuffioSize)
 			sess := NewSession(s.Logger,
-				rand.GenerateUuid(),
 				conn,
-				bufio.NewReaderSize(conn, config.BuffioSize),
-				bufio.NewWriterSize(conn, config.BuffioSize),
+				socketr,
+				socketw,
 				s.Broadcaster,
 			)
 

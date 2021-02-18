@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/torresjeff/rtmp/audio"
 	"github.com/torresjeff/rtmp/config"
+	"github.com/torresjeff/rtmp/rand"
 	"github.com/torresjeff/rtmp/video"
 	"go.uber.org/zap"
 	"io"
@@ -108,10 +109,10 @@ type Session struct {
 	serverAddress  string
 }
 
-func NewSession(logger *zap.Logger, sessionID string, conn net.Conn, socketr *bufio.Reader, socketw *bufio.Writer, b *Broadcaster) *Session {
+func NewSession(logger *zap.Logger, conn net.Conn, socketr *bufio.Reader, socketw *bufio.Writer, b *Broadcaster) *Session {
 	session := &Session{
 		logger:      logger,
-		sessionID:   sessionID,
+		sessionID:   rand.GenerateUuid(),
 		conn:        conn,
 		socketr:     socketr,
 		socketw:     socketw,
@@ -119,14 +120,13 @@ func NewSession(logger *zap.Logger, sessionID string, conn net.Conn, socketr *bu
 		active:      true,
 		isClient:    false,
 	}
-	chunkHandler := NewChunkHandler(session.socketr, session.socketw)
-	session.messageManager = NewMessageManager(session, chunkHandler)
+	session.messageManager = NewMessageManager(session, NewHandshaker(socketr, socketw), NewChunkHandler(session.socketr, session.socketw))
 	return session
 }
 
-func NewClientSession(sessionID string, conn *net.Conn, app string, streamKey string, audioCallback AudioCallback, videoCallback VideoCallback, metadataCallback MetadataCallback) *Session {
+func NewClientSession(conn *net.Conn, app string, streamKey string, audioCallback AudioCallback, videoCallback VideoCallback, metadataCallback MetadataCallback) *Session {
 	session := &Session{
-		sessionID:  sessionID,
+		sessionID:  rand.GenerateUuid(),
 		conn:       *conn,
 		socketr:    bufio.NewReaderSize(*conn, config.BuffioSize),
 		socketw:    bufio.NewWriterSize(*conn, config.BuffioSize),
@@ -140,14 +140,14 @@ func NewClientSession(sessionID string, conn *net.Conn, app string, streamKey st
 	}
 	session.tcUrl = "rtmp://" + (*conn).RemoteAddr().String() + "/" + app
 	chunkHandler := NewChunkHandler(session.socketr, session.socketw)
-	session.messageManager = NewMessageManager(session, chunkHandler)
+	session.messageManager = NewMessageManager(session, NewHandshaker(session.socketr, session.socketw), chunkHandler)
 	return session
 }
 
 // Start performs the initial handshake and starts receiving streams of data. This is used for servers only. For clients, use StartPlayback().
 func (session *Session) Start() error {
 	// Perform handshake
-	err := Handshake(session.socketr, session.socketw)
+	err := session.messageManager.Initialize()
 	if err == io.EOF {
 		return session.conn.Close()
 	} else if err != nil {
@@ -195,7 +195,8 @@ func (session *Session) Start() error {
 }
 
 func (session *Session) StartPlayback() error {
-	err := ClientHandshake(session.socketr, session.socketw)
+	err := session.messageManager.InitializeClient()
+
 	if err != nil {
 		return err
 	}

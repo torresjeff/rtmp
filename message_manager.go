@@ -44,15 +44,25 @@ const (
 
 type MessageManager struct {
 	session      MediaServer
+	handshaker   *Handshaker
 	chunkHandler *ChunkHandler
 	streamID     uint32
 }
 
-func NewMessageManager(session MediaServer, chunkHandler *ChunkHandler) *MessageManager {
+func NewMessageManager(session MediaServer, handshaker *Handshaker, chunkHandler *ChunkHandler) *MessageManager {
 	return &MessageManager{
 		session:      session,
+		handshaker:   handshaker,
 		chunkHandler: chunkHandler,
 	}
+}
+
+func (m *MessageManager) Initialize() error {
+	return m.handshaker.Handshake()
+}
+
+func (m *MessageManager) InitializeClient() error {
+	return m.handshaker.ClientHandshake()
 }
 
 // Reads the next chunk header + data

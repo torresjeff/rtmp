@@ -11,8 +11,9 @@ func main() {
 	defer logger.Sync()
 
 	server := &rtmp.Server{
-		Logger: logger,
+		Logger:      logger,
 		Broadcaster: rtmp.NewBroadcaster(rtmp.NewInMemoryContext()),
 	}
+
 	logger.Fatal(server.Listen().Error())
 }

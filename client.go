@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/torresjeff/rtmp/config"
-	"github.com/torresjeff/rtmp/rand"
 	"net"
 	"net/url"
 	"strings"
@@ -31,7 +30,7 @@ func (c *Client) Connect(addr string) error {
 	// Always assign rtmp as the scheme
 	u.Scheme = "rtmp"
 	if u.Port() == "" {
-		u.Host += ":1935"
+		u.Host += ":" + config.DefaultPort
 	}
 	c.url = u
 	c.raddr = u.Host
@@ -64,7 +63,7 @@ func (c *Client) Connect(addr string) error {
 		fmt.Println("client: connected to", conn.RemoteAddr().String())
 	}
 
-	client := NewClientSession(rand.GenerateUuid(), &conn, c.app, c.streamKey, c.OnAudio, c.OnVideo, c.OnMetadata)
+	client := NewClientSession(&conn, c.app, c.streamKey, c.OnAudio, c.OnVideo, c.OnMetadata)
 	err = client.StartPlayback()
 	if err != nil {
 		return err

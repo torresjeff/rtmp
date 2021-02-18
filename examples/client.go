@@ -17,17 +17,17 @@ func OnVideo(frameType video.FrameType, codec video.Codec, payload []byte, times
 }
 
 func OnMetadata(metadata map[string]interface{}) {
-	fmt.Printf("client: on metadata: %+v", metadata) 
+	fmt.Printf("client: on metadata: %+v", metadata)
 }
 
 func main() {
 	// Specify audio, video and metadata callbacks
 	client := &rtmp.Client{
-		OnAudio: OnAudio,
-		OnVideo: OnVideo,
+		OnAudio:    OnAudio,
+		OnVideo:    OnVideo,
 		OnMetadata: OnMetadata,
 	}
 
-	log.Fatal(client.Connect("rtmp://192.168.1.2/app/publish"))
+	log.Fatal(client.Connect("rtmp://localhost/app/obs"))
 	//log.Fatal(client.Connect("rtmp://live-atl.twitch.tv/app/stremKey"))
 }
