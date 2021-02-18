@@ -1,9 +1,11 @@
 package rtmp
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"github.com/torresjeff/rtmp/config"
+	"io"
 	"net"
 	"net/url"
 	"strings"
@@ -59,13 +61,19 @@ func (c *Client) Connect(addr string) error {
 		return err
 	}
 
+	defer conn.Close()
+
 	if config.Debug {
 		fmt.Println("client: connected to", conn.RemoteAddr().String())
 	}
 
-	client := NewClientSession(&conn, c.app, c.streamKey, c.OnAudio, c.OnVideo, c.OnMetadata)
+	socketr := bufio.NewReaderSize(conn, config.BuffioSize)
+	socketw := bufio.NewWriterSize(conn, config.BuffioSize)
+	tcUrl := "rtmp://" + conn.RemoteAddr().String() + "/" + c.app
+	client := NewClientSession(c.app, tcUrl, c.streamKey, c.OnAudio, c.OnVideo, c.OnMetadata)
+	client.messageManager = NewMessageManager(client, NewHandshaker(socketr, socketw), NewChunkHandler(socketr, socketw))
 	err = client.StartPlayback()
-	if err != nil {
+	if err != nil && err != io.EOF {
 		return err
 	}
 

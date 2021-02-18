@@ -6,6 +6,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/torresjeff/rtmp/config"
 	"go.uber.org/zap"
+	"io"
 	"net"
 )
 
@@ -48,23 +49,23 @@ func (s *Server) Listen() error {
 		s.Logger.Info(fmt.Sprint("[server] Accepted incoming connection from ", conn.RemoteAddr().String()))
 
 		go func(conn net.Conn) {
-			// TODO: defer close connection here instead, Session shouldn't worry about closing connection at every possible error.
+			defer conn.Close()
 
 			socketr := bufio.NewReaderSize(conn, config.BuffioSize)
 			socketw := bufio.NewWriterSize(conn, config.BuffioSize)
-			sess := NewSession(s.Logger,
-				conn,
-				socketr,
-				socketw,
-				s.Broadcaster,
+			sess := NewSession(s.Logger, s.Broadcaster)
+
+			sess.messageManager = NewMessageManager(sess,
+				NewHandshaker(socketr, socketw),
+				NewChunkHandler(socketr, socketw),
 			)
 
-			s.Logger.Info(fmt.Sprint("[server] Starting session with sessionId ", sess.sessionID))
+			s.Logger.Info(fmt.Sprint("[server] Starting server session with sessionId ", sess.sessionID))
 			err := sess.Start()
-			if err != nil {
-				s.Logger.Error(fmt.Sprint("[server] Session with sessionId ", sess.sessionID, " ended with an error: ", err))
+			if err != io.EOF {
+				s.Logger.Error(fmt.Sprint("[server] Server session with sessionId ", sess.sessionID, " ended with an error: ", err))
 			} else {
-				s.Logger.Info(fmt.Sprint("[server] Session with sessionId ", sess.sessionID, " ended."))
+				s.Logger.Info(fmt.Sprint("[server] Server session with sessionId ", sess.sessionID, " ended."))
 			}
 		}(conn)
 

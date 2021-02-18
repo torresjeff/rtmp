@@ -57,10 +57,18 @@ func NewMessageManager(session MediaServer, handshaker *Handshaker, chunkHandler
 	}
 }
 
+// Initialize performs the handshake with the client. It returns an error if the handshake was not successful.
+// Initialize should not be called again for the remainder of the session. Calling Initialize more than once will result
+// in an error.
+// This method is used for servers only.
 func (m *MessageManager) Initialize() error {
 	return m.handshaker.Handshake()
 }
 
+// InitializeClient performs the handshake with the server. It returns an error if the handshake was not successful.
+// InitializeClient should not be called again for the remainder of the session. Calling InitializeClient more than once
+// will result in an error.
+// This method is used for clients only.
 func (m *MessageManager) InitializeClient() error {
 	return m.handshaker.ClientHandshake()
 }

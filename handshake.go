@@ -11,22 +11,29 @@ import (
 var ErrUnsupportedRTMPVersion error = errors.New("The version of RTMP is not supported")
 var ErrWrongC2Message error = errors.New("server handshake: s1 and c2 handshake messages do not match")
 var ErrWrongS2Message error = errors.New("client handshake: c1 and s2 handshake messages do not match")
+var ErrHandshakeAlreadyCompleted error = errors.New("invalid call to perform handshake, attempted to perform " +
+	"handshake more than once")
 
 const RtmpVersion3 = 3
 
 type Handshaker struct {
-	reader *bufio.Reader
-	writer *bufio.Writer
+	reader             *bufio.Reader
+	writer             *bufio.Writer
+	handshakeCompleted bool
 }
 
 func NewHandshaker(reader *bufio.Reader, writer *bufio.Writer) *Handshaker {
 	return &Handshaker{
 		reader,
 		writer,
+		false,
 	}
 }
 
 func (h *Handshaker) Handshake() error {
+	if h.handshakeCompleted {
+		return ErrHandshakeAlreadyCompleted
+	}
 	c1, err := h.readC0C1()
 	if err != nil {
 		return err
@@ -44,10 +51,14 @@ func (h *Handshaker) Handshake() error {
 		return ErrWrongC2Message
 	}
 
+	h.handshakeCompleted = true
 	return nil
 }
 
 func (h *Handshaker) ClientHandshake() error {
+	if h.handshakeCompleted {
+		return ErrHandshakeAlreadyCompleted
+	}
 	c1, err := h.sendC0C1()
 	if err != nil {
 		return err
@@ -64,17 +75,7 @@ func (h *Handshaker) ClientHandshake() error {
 		return err
 	}
 
-	//message := generateConnectRequest(3, 1, map[string]interface{}{
-	//	"app": "app",
-	//	"flashVer": "LNX 9,0,124,2",
-	//	"tcUrl": "rtmp://192.168.1.2/app",
-	//	"fpad": false,
-	//	"capabilities": 15,
-	//	"audioCodecs": 4071,
-	//	"videoCodecs": 252,
-	//	"videoFunction": 1,
-	//})
-	//send(h.writer, message)
+	h.handshakeCompleted = true
 	return nil
 }
 

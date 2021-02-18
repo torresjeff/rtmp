@@ -1,15 +1,12 @@
 package rtmp
 
 import (
-	"bufio"
 	"fmt"
 	"github.com/torresjeff/rtmp/audio"
 	"github.com/torresjeff/rtmp/config"
 	"github.com/torresjeff/rtmp/rand"
 	"github.com/torresjeff/rtmp/video"
 	"go.uber.org/zap"
-	"io"
-	"net"
 )
 
 type AudioCallback func(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, payload []byte, timestamp uint32)
@@ -80,9 +77,6 @@ type Session struct {
 	MediaServer
 	logger         *zap.Logger
 	sessionID      string
-	conn           net.Conn
-	socketr        *bufio.Reader
-	socketw        *bufio.Writer
 	clientMetadata clientMetadata
 	broadcaster    *Broadcaster // broadcasts audio/video messages to playback clients subscribed to a stream
 	active         bool         // true if the session is active
@@ -109,38 +103,30 @@ type Session struct {
 	serverAddress  string
 }
 
-func NewSession(logger *zap.Logger, conn net.Conn, socketr *bufio.Reader, socketw *bufio.Writer, b *Broadcaster) *Session {
+func NewSession(logger *zap.Logger, b *Broadcaster) *Session {
 	session := &Session{
 		logger:      logger,
 		sessionID:   rand.GenerateUuid(),
-		conn:        conn,
-		socketr:     socketr,
-		socketw:     socketw,
 		broadcaster: b,
 		active:      true,
 		isClient:    false,
 	}
-	session.messageManager = NewMessageManager(session, NewHandshaker(socketr, socketw), NewChunkHandler(session.socketr, session.socketw))
+
 	return session
 }
 
-func NewClientSession(conn *net.Conn, app string, streamKey string, audioCallback AudioCallback, videoCallback VideoCallback, metadataCallback MetadataCallback) *Session {
+func NewClientSession(app string, tcUrl string, streamKey string, audioCallback AudioCallback, videoCallback VideoCallback, metadataCallback MetadataCallback) *Session {
 	session := &Session{
 		sessionID:  rand.GenerateUuid(),
-		conn:       *conn,
-		socketr:    bufio.NewReaderSize(*conn, config.BuffioSize),
-		socketw:    bufio.NewWriterSize(*conn, config.BuffioSize),
 		isClient:   true,
 		app:        app,
+		tcUrl:      tcUrl,
 		streamKey:  streamKey,
 		OnAudio:    audioCallback,
 		OnVideo:    videoCallback,
 		OnMetadata: metadataCallback,
 		active:     true,
 	}
-	session.tcUrl = "rtmp://" + (*conn).RemoteAddr().String() + "/" + app
-	chunkHandler := NewChunkHandler(session.socketr, session.socketw)
-	session.messageManager = NewMessageManager(session, NewHandshaker(session.socketr, session.socketw), chunkHandler)
 	return session
 }
 
@@ -148,10 +134,7 @@ func NewClientSession(conn *net.Conn, app string, streamKey string, audioCallbac
 func (session *Session) Start() error {
 	// Perform handshake
 	err := session.messageManager.Initialize()
-	if err == io.EOF {
-		return session.conn.Close()
-	} else if err != nil {
-		session.conn.Close()
+	if err != nil {
 		return err
 	}
 
@@ -181,15 +164,10 @@ func (session *Session) Start() error {
 	for {
 		if session.active {
 			if err = session.messageManager.nextMessage(); err != nil {
-				if err == io.EOF {
-					return session.conn.Close()
-				}
 				return err
 			}
 		} else {
-			// Session is over, finish the session
-
-			return session.conn.Close()
+			return nil
 		}
 	}
 }
@@ -236,17 +214,11 @@ func (session *Session) StartPlayback() error {
 	// Start reading chunks
 	for {
 		if session.active {
-			if err = session.messageManager.nextMessage(); err == io.EOF {
-				fmt.Println("client session: closing connection")
-				return session.conn.Close()
-			} else if err != nil {
-				fmt.Println("client session: closing connection")
-				session.conn.Close()
+			if err = session.messageManager.nextMessage(); err != nil {
 				return err
 			}
 		} else {
-			// Session is over, finish the session
-			return session.conn.Close()
+			return nil
 		}
 	}
 }
@@ -339,7 +311,6 @@ func (session *Session) onConnect(csID uint32, transactionID float64, data map[s
 	} else {
 		fmt.Println("session: user trying to connect to app \"" + session.app + "\", but the app doesn't exist. Closing connection.")
 		session.active = false
-		session.conn.Close()
 	}
 }
 

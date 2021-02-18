@@ -28,6 +28,9 @@ func main() {
 		OnMetadata: OnMetadata,
 	}
 
-	log.Fatal(client.Connect("rtmp://localhost/app/obs"))
+	err := client.Connect("rtmp://localhost/app/obs")
+	if err != nil {
+		log.Fatal(err)
+	}
 	//log.Fatal(client.Connect("rtmp://live-atl.twitch.tv/app/stremKey"))
 }
