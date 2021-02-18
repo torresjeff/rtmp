@@ -141,15 +141,14 @@ func NewClientSession(sessionID string, conn *net.Conn, app string, streamKey st
 	return session
 }
 
-// Run performs the initial handshake and starts receiving streams of data. This is used for servers only. For clients, use StartPlayback().
-func (session *Session) Run() error {
+// Start performs the initial handshake and starts receiving streams of data. This is used for servers only. For clients, use StartPlayback().
+func (session *Session) Start() error {
 	// Perform handshake
 	err := Handshake(session.socketr, session.socketw)
 	if err == io.EOF {
 		return session.conn.Close()
 	} else if err != nil {
 		session.conn.Close()
-		fmt.Println("session: error in handshake")
 		return err
 	}
 

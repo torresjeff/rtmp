@@ -79,7 +79,7 @@ type ChunkBasicHeader struct {
 }
 
 type ChunkMessageHeader struct {
-	// Absolute timestamp of the message (if ChunkHeader.BasicHeader.FMT == 0, chunk type 0), or the timestamp delta if other type other type of chunk
+	// Absolute timestamp of the message (if ChunkHeader.BasicHeader.FMT == 0, chunk type 0), or the timestamp delta if other type of chunk
 	Timestamp uint32
 	MessageLength uint32
 	MessageTypeID uint8

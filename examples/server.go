@@ -2,14 +2,17 @@ package main
 
 import (
 	"github.com/torresjeff/rtmp"
-	"github.com/torresjeff/rtmp/config"
-	"log"
+	"go.uber.org/zap"
 )
 
 func main() {
 	//defer profile.Start(profile.CPUProfile, profile.ProfilePath(".")).Stop()
-	server := &rtmp.Server{}
-	//server.Addr = ":1936"
-	config.Debug = true
-	log.Fatal(server.Run())
+	logger, _ := zap.NewDevelopment()
+	defer logger.Sync()
+
+	server := &rtmp.Server{
+		Logger: logger,
+		Broadcaster: rtmp.NewBroadcaster(rtmp.NewInMemoryContext()),
+	}
+	logger.Fatal(server.Listen().Error())
 }

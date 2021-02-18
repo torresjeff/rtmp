@@ -2,25 +2,30 @@ package rtmp
 
 import (
 	"fmt"
+	"github.com/pkg/errors"
 	"github.com/torresjeff/rtmp/config"
 	"github.com/torresjeff/rtmp/rand"
+	"go.uber.org/zap"
 	"net"
 )
 
+// Server represents the RTMP server, where a client/app can stream media to. The server listens for incoming connections.
 type Server struct {
 	Addr string
+	Logger *zap.Logger
+	Broadcaster *Broadcaster
 	// TODO: should probably add something like maxConns
 }
 
-// Run starts the server and listens for any incoming connections. If no Addr (host:port) has been assigned to the server, ":1935" is used.
-func (server *Server) Run() error {
-	if server.Addr == "" {
-		server.Addr = ":1935"
+// Listen starts the server and listens for any incoming connections. If no Addr (host:port) has been assigned to the server, ":1935" is used.
+func (s *Server) Listen() error {
+	if s.Addr == "" {
+		s.Addr = ":" + config.DefaultPort
 	}
 
-	tcpAddress, err := net.ResolveTCPAddr("tcp", server.Addr);
+	tcpAddress, err := net.ResolveTCPAddr("tcp", s.Addr)
 	if err != nil {
-		err = fmt.Errorf("rtmp: error resolving tcp address: %s", err)
+		err = errors.Errorf("[server] error resolving tcp address: %s", err)
 		return err
 	}
 
@@ -30,32 +35,29 @@ func (server *Server) Run() error {
 		return err
 	}
 
-	if config.Debug {
-		fmt.Println("rtmp: server: listening on", server.Addr)
-	}
+	s.Logger.Info(fmt.Sprint("[server] Listening on ", s.Addr))
 
-	// broadcaster stores information about all running subscribers in a global object.
-	// TODO: allow specifying context store as a parameter when creating the server
-	context := NewInMemoryContext()
-	broadcaster := NewBroadcaster(context)
-	// Loop infinitely, accepting any incoming connection. Every new connection will create a new session.
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			return err
+			s.Logger.Error(fmt.Sprint("[server] Error accepting incoming connection ", err))
+			continue
 		}
 
-		if config.Debug {
-			fmt.Println("accepted incoming connection from", conn.RemoteAddr().String())
-		}
+		s.Logger.Info(fmt.Sprint("[server] Accepted incoming connection from ", conn.RemoteAddr().String()))
 
-		// Create a new session from the new connection (basically a wrapper of the connection + other data)
-		sess := NewSession(rand.GenerateUuid(), &conn, broadcaster)
+		sess := NewSession(rand.GenerateUuid(),
+			&conn,
+			s.Broadcaster,
+		)
 
 		go func () {
-			err := sess.Run()
-			if config.Debug {
-				fmt.Println("rtmp: server: session closed, err:", err)
+			s.Logger.Info(fmt.Sprint("[server] Starting session with sessionId ", sess.sessionID))
+			err := sess.Start()
+			if err != nil {
+				s.Logger.Error(fmt.Sprint("[server] Session with sessionId ", sess.sessionID, " ended with an error: ", err))
+			} else {
+				s.Logger.Info(fmt.Sprint("[server] Session with sessionId ", sess.sessionID, " ended."))
 			}
 		}()
 

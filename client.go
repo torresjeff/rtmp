@@ -26,7 +26,7 @@ type Client struct {
 func (c *Client) Connect(addr string) error {
 	u, err := url.Parse(addr)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	// Always assign rtmp as the scheme
 	u.Scheme = "rtmp"
