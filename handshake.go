@@ -11,6 +11,7 @@ import (
 var ErrUnsupportedRTMPVersion error = errors.New("The version of RTMP is not supported")
 var ErrWrongC2Message error = errors.New("server handshake: s1 and c2 handshake messages do not match")
 var ErrWrongS2Message error = errors.New("client handshake: c1 and s2 handshake messages do not match")
+
 const RtmpVersion3 = 3
 
 func Handshake(reader *bufio.Reader, writer *bufio.Writer) error {
@@ -146,7 +147,7 @@ func sendS0S1S2(writer *bufio.Writer, c1 []byte) ([]byte, error) {
 	s0s1s2[0] = RtmpVersion3
 	// s1 message is stored in bytes 1-1536
 	if err = generateRandomData(s0s1s2[1:1537]); err != nil {
-		return  nil, err
+		return nil, err
 	}
 	// s2 message is stored in bytes 1537-3073
 	if err = generateEcho(s0s1s2[1537:], c1); err != nil {
@@ -168,7 +169,6 @@ func generateRandomData(s1 []byte) error {
 	}
 	return nil
 }
-
 
 func generateEcho(target []byte, source []byte) error {
 	copy(target[:], source)

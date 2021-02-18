@@ -34,7 +34,7 @@ var StreamNotFound error = errors.New("StreamNotFound")
 
 func NewInMemoryContext() *InMemoryContext {
 	return &InMemoryContext{
-		subscribers: make(map[string][]Subscriber),
+		subscribers:            make(map[string][]Subscriber),
 		avcSequenceHeaderCache: make(map[string][]byte),
 		aacSequenceHeaderCache: make(map[string][]byte),
 	}
@@ -75,7 +75,7 @@ func (c *InMemoryContext) RegisterSubscriber(streamKey string, subscriber Subscr
 	return StreamNotFound
 }
 
-func (c* InMemoryContext) StreamExists(streamKey string) bool {
+func (c *InMemoryContext) StreamExists(streamKey string) bool {
 	c.subMutex.RLock()
 	defer c.subMutex.RUnlock()
 	_, exists := c.subscribers[streamKey]
@@ -105,7 +105,7 @@ func (c *InMemoryContext) DestroySubscriber(streamKey string, sessionID string) 
 	for i, sub := range subscribers {
 		if sub.GetID() == sessionID {
 			// Swap the subscriber we're deleting with the last element, to avoid having to delete (more efficient)
-			subscribers[i] = subscribers[numberOfSubs - 1]
+			subscribers[i] = subscribers[numberOfSubs-1]
 			c.subscribers[streamKey] = subscribers[:numberOfSubs-1]
 		}
 	}

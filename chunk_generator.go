@@ -154,13 +154,13 @@ func generateConnectResponseSuccess(csID uint32) []byte {
 	// Transaction ID is 1 for connection responses
 	transactionId, _ := amf0.Encode(1)
 	properties, _ := amf0.Encode(map[string]interface{}{
-		"fmsVer": config.FlashMediaServerVersion,
+		"fmsVer":       config.FlashMediaServerVersion,
 		"capabilities": config.Capabilities,
-		"mode": config.Mode,
+		"mode":         config.Mode,
 	})
 	information, _ := amf0.Encode(map[string]interface{}{
-		"code": NetConnectionSucces,
-		"level": "status",
+		"code":        NetConnectionSucces,
+		"level":       "status",
 		"description": "Connection accepted.",
 		"data": map[string]interface{}{
 			"string": "3,5,7,7009",
@@ -205,7 +205,6 @@ func generateConnectResponseSuccess(csID uint32) []byte {
 	connectResponseSuccessMessage = append(connectResponseSuccessMessage, properties...)
 	connectResponseSuccessMessage = append(connectResponseSuccessMessage, information...)
 
-
 	return connectResponseSuccessMessage
 }
 
@@ -214,8 +213,8 @@ func generateOnFCPublishMessage(csID uint32, transactionID float64, streamKey st
 	tId, _ := amf0.Encode(0)
 	commandObject, _ := amf0.Encode(nil)
 	information, _ := amf0.Encode(map[string]interface{}{
-		"level": "status",
-		"code": "NetStream.Publish.Start",
+		"level":       "status",
+		"code":        "NetStream.Publish.Start",
 		"description": "FCPublish to stream " + streamKey,
 	})
 	bodyLength := len(onFCPublishString) + len(tId) + len(commandObject) + len(information)
@@ -290,7 +289,7 @@ func generateConnectRequest(csID int, transactionID int, info map[string]interfa
 	cmdObj, _ := amf0.Encode(info)
 	bodyLength := len(connect) + len(tID) + len(cmdObj)
 
-	connectRequestMessage := make([]byte, 12, 12 + bodyLength)
+	connectRequestMessage := make([]byte, 12, 12+bodyLength)
 	//---- HEADER ----//
 	// if csid = 3, does this mean these are not control messages/commands?
 	connectRequestMessage[0] = byte(csID)
@@ -321,7 +320,7 @@ func generateCreateStreamRequest(transactionID int) []byte {
 	tID, _ := amf0.Encode(transactionID)
 	cmdObj, _ := amf0.Encode(nil)
 	bodyLength := len(createStream) + len(tID) + len(cmdObj)
-	createStreamMessage := make([]byte, 8, 8 + bodyLength)
+	createStreamMessage := make([]byte, 8, 8+bodyLength)
 
 	//---- HEADER ----//
 	// if csid = 3, does this mean these are not control messages/commands?
@@ -350,7 +349,7 @@ func generateMetadataMessage(metadata map[string]interface{}, streamID uint32) [
 	onMetadata, _ := amf0.Encode("onMetadata")
 	metadataObj, _ := amf0.Encode(amf0.ECMAArray(metadata))
 	bodyLength := len(setDataFrame) + len(onMetadata) + len(metadataObj)
-	metadataMessage := make([]byte, 12, 12 + bodyLength)
+	metadataMessage := make([]byte, 12, 12+bodyLength)
 
 	//---- HEADER ----//
 	metadataMessage[0] = byte(4)
@@ -383,7 +382,7 @@ func generatePlayRequest(streamKey string, streamID uint32) []byte {
 	streamName, _ := amf0.Encode(streamKey)
 	start, _ := amf0.Encode(-2000)
 	bodyLength := len(play) + len(tID) + len(cmdObj) + len(streamName) + len(start)
-	playMessage := make([]byte, 12, 12 + bodyLength)
+	playMessage := make([]byte, 12, 12+bodyLength)
 
 	//---- HEADER ----//
 	// if csid = 3, does this mean these are not control messages/commands?

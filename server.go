@@ -1,6 +1,7 @@
 package rtmp
 
 import (
+	"bufio"
 	"fmt"
 	"github.com/pkg/errors"
 	"github.com/torresjeff/rtmp/config"
@@ -11,8 +12,8 @@ import (
 
 // Server represents the RTMP server, where a client/app can stream media to. The server listens for incoming connections.
 type Server struct {
-	Addr string
-	Logger *zap.Logger
+	Addr        string
+	Logger      *zap.Logger
 	Broadcaster *Broadcaster
 	// TODO: should probably add something like maxConns
 }
@@ -46,12 +47,15 @@ func (s *Server) Listen() error {
 
 		s.Logger.Info(fmt.Sprint("[server] Accepted incoming connection from ", conn.RemoteAddr().String()))
 
-		sess := NewSession(rand.GenerateUuid(),
-			&conn,
-			s.Broadcaster,
-		)
+		go func(conn net.Conn) {
+			sess := NewSession(s.Logger,
+				rand.GenerateUuid(),
+				conn,
+				bufio.NewReaderSize(conn, config.BuffioSize),
+				bufio.NewWriterSize(conn, config.BuffioSize),
+				s.Broadcaster,
+			)
 
-		go func () {
 			s.Logger.Info(fmt.Sprint("[server] Starting session with sessionId ", sess.sessionID))
 			err := sess.Start()
 			if err != nil {
@@ -59,7 +63,7 @@ func (s *Server) Listen() error {
 			} else {
 				s.Logger.Info(fmt.Sprint("[server] Session with sessionId ", sess.sessionID, " ended."))
 			}
-		}()
+		}(conn)
 
 	}
 

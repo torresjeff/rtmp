@@ -6,6 +6,7 @@ import (
 	"github.com/torresjeff/rtmp/audio"
 	"github.com/torresjeff/rtmp/config"
 	"github.com/torresjeff/rtmp/video"
+	"go.uber.org/zap"
 	"io"
 	"net"
 )
@@ -15,21 +16,21 @@ type VideoCallback func(frameType video.FrameType, codec video.Codec, payload []
 type MetadataCallback func(metadata map[string]interface{})
 
 type surroundSound struct {
-	stereoSound bool
-	twoPointOneSound bool
+	stereoSound        bool
+	twoPointOneSound   bool
 	threePointOneSound bool
 	fourPointZeroSound bool
-	fourPointOneSound bool
-	fivePointOneSound bool
+	fourPointOneSound  bool
+	fivePointOneSound  bool
 	sevenPointOneSound bool
 }
 
 type clientMetadata struct {
-	duration      float64
-	fileSize      float64
-	width         float64
-	height        float64
-	videoCodecID  string
+	duration     float64
+	fileSize     float64
+	width        float64
+	height       float64
+	videoCodecID string
 	// number representation of videoCodecID (ffmpeg sends audioCodecID as a number rather than a string (like obs))
 	nVideoCodecID float64
 	videoDataRate float64
@@ -76,6 +77,7 @@ type MediaServer interface {
 // Represents a connection made with the RTMP server where messages are exchanged between client/server.
 type Session struct {
 	MediaServer
+	logger         *zap.Logger
 	sessionID      string
 	conn           net.Conn
 	socketr        *bufio.Reader
@@ -106,15 +108,16 @@ type Session struct {
 	serverAddress  string
 }
 
-func NewSession(sessionID string, conn *net.Conn, b *Broadcaster) *Session {
+func NewSession(logger *zap.Logger, sessionID string, conn net.Conn, socketr *bufio.Reader, socketw *bufio.Writer, b *Broadcaster) *Session {
 	session := &Session{
-		sessionID:         sessionID,
-		conn:              *conn,
-		socketr:           bufio.NewReaderSize(*conn, config.BuffioSize),
-		socketw: bufio.NewWriterSize(*conn, config.BuffioSize),
-		broadcaster:       b,
-		active:            true,
-		isClient: false,
+		logger:      logger,
+		sessionID:   sessionID,
+		conn:        conn,
+		socketr:     socketr,
+		socketw:     socketw,
+		broadcaster: b,
+		active:      true,
+		isClient:    false,
 	}
 	chunkHandler := NewChunkHandler(session.socketr, session.socketw)
 	session.messageManager = NewMessageManager(session, chunkHandler)
@@ -123,17 +126,17 @@ func NewSession(sessionID string, conn *net.Conn, b *Broadcaster) *Session {
 
 func NewClientSession(sessionID string, conn *net.Conn, app string, streamKey string, audioCallback AudioCallback, videoCallback VideoCallback, metadataCallback MetadataCallback) *Session {
 	session := &Session{
-		sessionID:     sessionID,
-		conn:          *conn,
-		socketr:       bufio.NewReaderSize(*conn, config.BuffioSize),
-		socketw:       bufio.NewWriterSize(*conn, config.BuffioSize),
-		isClient:      true,
-		app:           app,
-		streamKey:     streamKey,
-		OnAudio:       audioCallback,
-		OnVideo:       videoCallback,
-		OnMetadata:    metadataCallback,
-		active:        true,
+		sessionID:  sessionID,
+		conn:       *conn,
+		socketr:    bufio.NewReaderSize(*conn, config.BuffioSize),
+		socketw:    bufio.NewWriterSize(*conn, config.BuffioSize),
+		isClient:   true,
+		app:        app,
+		streamKey:  streamKey,
+		OnAudio:    audioCallback,
+		OnVideo:    videoCallback,
+		OnMetadata: metadataCallback,
+		active:     true,
 	}
 	session.tcUrl = "rtmp://" + (*conn).RemoteAddr().String() + "/" + app
 	chunkHandler := NewChunkHandler(session.socketr, session.socketw)
@@ -177,16 +180,15 @@ func (session *Session) Start() error {
 	// After handshake, start reading chunks
 	for {
 		if session.active {
-			if err = session.messageManager.nextMessage(); err == io.EOF {
-				fmt.Println("session: closing connection")
-				return session.conn.Close()
-			} else if err != nil {
-				fmt.Println("session: closing connection")
-				session.conn.Close()
+			if err = session.messageManager.nextMessage(); err != nil {
+				if err == io.EOF {
+					return session.conn.Close()
+				}
 				return err
 			}
 		} else {
 			// Session is over, finish the session
+
 			return session.conn.Close()
 		}
 	}
@@ -202,13 +204,13 @@ func (session *Session) StartPlayback() error {
 	}
 
 	info := map[string]interface{}{
-		"app": session.app,
-		"flashVer": "LNX 9,0,124,2",
-		"tcUrl": session.tcUrl,
-		"fpad": false,
-		"capabilities": 15,
-		"audioCodecs": 4071,
-		"videoCodecs": 252,
+		"app":           session.app,
+		"flashVer":      "LNX 9,0,124,2",
+		"tcUrl":         session.tcUrl,
+		"fpad":          false,
+		"capabilities":  15,
+		"audioCodecs":   4071,
+		"videoCodecs":   252,
 		"videoFunction": 1,
 	}
 
@@ -268,7 +270,6 @@ func (session *Session) onResult(info map[string]interface{}) {
 	if level == "warning" {
 		fmt.Printf("session: onResult warning: %+v\n", info)
 	}
-
 
 	switch code {
 	case "NetConnection.Connect.Success":

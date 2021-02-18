@@ -29,14 +29,13 @@ func (b *Broadcaster) DestroyPublisher(streamKey string) error {
 	return b.context.DestroyPublisher(streamKey)
 }
 
-func (b* Broadcaster) RegisterSubscriber(streamKey string, subscriber Subscriber) error {
+func (b *Broadcaster) RegisterSubscriber(streamKey string, subscriber Subscriber) error {
 	return b.context.RegisterSubscriber(streamKey, subscriber)
 }
 
 func (b *Broadcaster) StreamExists(streamKey string) bool {
 	return b.context.StreamExists(streamKey)
 }
-
 
 func (b *Broadcaster) BroadcastAudio(streamKey string, audio []byte, timestamp uint32) error {
 	subscribers, err := b.context.GetSubscribersForStream(streamKey)

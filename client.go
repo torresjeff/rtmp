@@ -14,12 +14,12 @@ var ErrInvalidScheme error = errors.New("invalid scheme in URL")
 
 type Client struct {
 	// Address of the RTMP server this client is connected to
-	raddr string
-	app string
-	streamKey string
-	url *url.URL
-	OnAudio AudioCallback
-	OnVideo VideoCallback
+	raddr      string
+	app        string
+	streamKey  string
+	url        *url.URL
+	OnAudio    AudioCallback
+	OnVideo    VideoCallback
 	OnMetadata MetadataCallback
 }
 

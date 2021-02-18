@@ -13,10 +13,10 @@ import (
 // Control message types
 const (
 	// Control messages MUST have message stream ID 0 and be sent in chunk stream ID 2
-	SetChunkSize = 1
-	AbortMessage = 2
-	Ack = 3
-	WindowAckSize = 5
+	SetChunkSize     = 1
+	AbortMessage     = 2
+	Ack              = 3
+	WindowAckSize    = 5
 	SetPeerBandwidth = 6
 
 	UserControlMessage = 4
@@ -33,8 +33,8 @@ const (
 	SharedObjectMessageAMF0 = 19
 	SharedObjectMessageAMF3 = 16
 
-	AudioMessage = 8
-	VideoMessage = 9
+	AudioMessage     = 8
+	VideoMessage     = 9
 	AggregateMessage = 22
 )
 
@@ -50,7 +50,7 @@ type MessageManager struct {
 
 func NewMessageManager(session MediaServer, chunkHandler *ChunkHandler) *MessageManager {
 	return &MessageManager{
-		session: session,
+		session:      session,
 		chunkHandler: chunkHandler,
 	}
 }
@@ -248,10 +248,10 @@ func (m *MessageManager) handleCommandAmf0(csID uint32, streamID uint32, command
 		streamID, _ := amf0.Decode(payload)
 		m.session.onDeleteStream(commandObject, streamID.(float64))
 	case "_result":
-		info,  _ := amf0.Decode(payload)
+		info, _ := amf0.Decode(payload)
 		m.session.onResult(info.(map[string]interface{}))
 	case "onStatus":
-		info,  _ := amf0.Decode(payload)
+		info, _ := amf0.Decode(payload)
 		m.session.onStatus(info.(map[string]interface{}))
 	default:
 		fmt.Println("message manager: received command " + commandName + ", but couldn't handle it because no implementation is defined")
@@ -498,8 +498,8 @@ func (m *MessageManager) sendRtmpSampleAccess(audio bool, video bool) {
 
 func (m *MessageManager) sendStatusMessage(level string, code string, description string, optionalDetails ...string) {
 	infoObject := map[string]interface{}{
-		"level": level,
-		"code": code,
+		"level":       level,
+		"code":        code,
 		"description": description,
 	}
 	if len(optionalDetails) > 0 && optionalDetails[0] != "" {

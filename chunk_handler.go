@@ -9,7 +9,6 @@ import (
 	"io"
 )
 
-
 var InvalidChunkType error = errors.New("chunk handler: unknown chunk type")
 
 // Chunk types
@@ -24,15 +23,15 @@ const (
 	// Only Protocol Channel is defined in the spec (csid = 2), the others are defined by me with the idea of being
 	// consistent in sending the same type of data through the same chunk stream id
 	ProtocolChannel uint8 = 2
-	AudioChannel uint8 = 4
-	VideoChannel uint8 = 7
+	AudioChannel    uint8 = 4
+	VideoChannel    uint8 = 7
 )
 
 const DefaultMaximumChunkSize = 128
 
 const (
-	LimitHard uint8 = 0
-	LimitSoft uint8 = 1
+	LimitHard    uint8 = 0
+	LimitSoft    uint8 = 1
 	LimitDynamic uint8 = 2
 	// Not part of the spec, it's for our internal use when a LimitDynamic message comes in
 	LimitNotSet uint8 = 3
@@ -45,7 +44,7 @@ type ChunkHandler struct {
 	// The key is the chunk stream ID, and the value is the previous header of that chunk stream ID
 	prevChunkHeader map[uint32]ChunkHeader
 	inChunkSize     uint32
-	outChunkSize     uint32
+	outChunkSize    uint32
 	windowAckSize   uint32
 	bytesReceived   uint32
 	outBandwidth    uint32
@@ -57,12 +56,12 @@ type ChunkHandler struct {
 
 type Chunk struct {
 	Header *ChunkHeader
-	Body *ChunkData
+	Body   *ChunkData
 }
 
 type ChunkHeader struct {
-	BasicHeader *ChunkBasicHeader
-	MessageHeader *ChunkMessageHeader
+	BasicHeader       *ChunkBasicHeader
+	MessageHeader     *ChunkMessageHeader
 	ExtendedTimestamp uint32
 	// Total elapsed time = timestamp + deltas
 	ElapsedTime uint32
@@ -74,22 +73,22 @@ type ChunkData struct {
 
 type ChunkBasicHeader struct {
 	// Chunk type
-	FMT uint8
+	FMT           uint8
 	ChunkStreamID uint32
 }
 
 type ChunkMessageHeader struct {
 	// Absolute timestamp of the message (if ChunkHeader.BasicHeader.FMT == 0, chunk type 0), or the timestamp delta if other type of chunk
-	Timestamp uint32
-	MessageLength uint32
-	MessageTypeID uint8
+	Timestamp       uint32
+	MessageLength   uint32
+	MessageTypeID   uint8
 	MessageStreamID uint32
 }
 
 func NewChunkHandler(reader *bufio.Reader, writer *bufio.Writer) *ChunkHandler {
 	return &ChunkHandler{
 		socketr:         reader,
-		socketw: writer,
+		socketw:         writer,
 		inChunkSize:     DefaultMaximumChunkSize,
 		outChunkSize:    DefaultMaximumChunkSize,
 		ackSent:         false,
@@ -174,7 +173,7 @@ func (chunkHandler *ChunkHandler) readBasicHeader(header *ChunkHeader) (n int, e
 		if err != nil {
 			return n, err
 		}
-		basicHeader.ChunkStreamID = uint32(binary.BigEndian.Uint16(id))+ 64
+		basicHeader.ChunkStreamID = uint32(binary.BigEndian.Uint16(id)) + 64
 		chunkHandler.bytesReceived += 2
 	} else {
 		// if csid is neither 0 or 1, that means we're dealing with chunk basic header 1 (uses 1 byte). We already read it.
@@ -313,8 +312,8 @@ func (chunkHandler *ChunkHandler) assembleMessage(messageLength uint32) (payload
 			return payload, n, err
 		}
 		// If this chunk is still not the end of the message, then read the whole chunk
-		if offset + chunkHandler.inChunkSize < messageLength {
-			r, err := io.ReadFull(chunkHandler.socketr, payload[offset:offset + chunkHandler.inChunkSize])
+		if offset+chunkHandler.inChunkSize < messageLength {
+			r, err := io.ReadFull(chunkHandler.socketr, payload[offset:offset+chunkHandler.inChunkSize])
 			n += r
 			if err != nil {
 				return payload, n, err
@@ -323,7 +322,7 @@ func (chunkHandler *ChunkHandler) assembleMessage(messageLength uint32) (payload
 		} else {
 			// If this is the last chunk of the message, just read the remaining bytes
 			remainingBytes := messageLength - offset
-			r, err := io.ReadFull(chunkHandler.socketr, payload[offset:offset + remainingBytes])
+			r, err := io.ReadFull(chunkHandler.socketr, payload[offset:offset+remainingBytes])
 			n += r
 			if err != nil {
 				return payload, n, err
@@ -473,8 +472,8 @@ func (chunkHandler *ChunkHandler) send(header []byte, payload []byte) error {
 				firstPayloadChunk = false
 			}
 			// if the next chunk is still not the end of the message, write chunk size bytes
-			if bytesWritten + chunkSize < payloadLength {
-				_, err = chunkHandler.socketw.Write(payload[bytesWritten:bytesWritten + chunkSize])
+			if bytesWritten+chunkSize < payloadLength {
+				_, err = chunkHandler.socketw.Write(payload[bytesWritten : bytesWritten+chunkSize])
 				if err != nil {
 					return err
 				}
@@ -482,7 +481,7 @@ func (chunkHandler *ChunkHandler) send(header []byte, payload []byte) error {
 			} else {
 				// Write remaining data
 				remainingBytes := payloadLength - bytesWritten
-				_, err = chunkHandler.socketw.Write(payload[bytesWritten:bytesWritten + remainingBytes])
+				_, err = chunkHandler.socketw.Write(payload[bytesWritten : bytesWritten+remainingBytes])
 				bytesWritten += remainingBytes
 			}
 		}
