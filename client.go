@@ -71,7 +71,6 @@ func (c *Client) Connect(addr string) error {
 	socketw := bufio.NewWriterSize(conn, config.BuffioSize)
 	tcUrl := "rtmp://" + conn.RemoteAddr().String() + "/" + c.app
 	client := NewClientSession(c.app, tcUrl, c.streamKey, c.OnAudio, c.OnVideo, c.OnMetadata)
-	client.messageManager = NewMessageManager(client, NewHandshaker(socketr, socketw), NewChunkHandler(socketr, socketw))
 	err = client.StartPlayback()
 	if err != nil && err != io.EOF {
 		return err

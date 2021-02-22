@@ -51,7 +51,7 @@ func (s *Server) Listen() error {
 		go func(conn net.Conn) {
 			defer conn.Close()
 
-			socketr := bufio.NewReaderSize(conn, config.BuffioSize)
+			socketr := NewReader(bufio.NewReaderSize(conn, config.BuffioSize))
 			socketw := bufio.NewWriterSize(conn, config.BuffioSize)
 			sess := NewSession(s.Logger, s.Broadcaster)
 

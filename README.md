@@ -1,3 +1,6 @@
+# Note
+Currently refactoring this whole project. Checkout branch `v0.1` if you want a working version for now.
+
 # RTMP Server
 RTMP server written in Go (Golang) that allows stream publishing.
 

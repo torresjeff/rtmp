@@ -12,6 +12,10 @@ type Reader struct {
 	n      uint64
 }
 
+func NewReader(reader *bufio.Reader) *Reader {
+	return &Reader{reader: reader}
+}
+
 // Read reads exactly len(p) bytes from the underlying bufio.Reader into p.
 // It returns the number of bytes copied and an error if fewer bytes were read.
 // The error is EOF only if no bytes were read.

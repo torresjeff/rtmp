@@ -11,6 +11,10 @@ type Writer struct {
 	writer *bufio.Writer
 }
 
+func NewWriter(writer *bufio.Writer) *Writer {
+	return &Writer{writer: writer}
+}
+
 // Write writes to the underlying bufio.Writer and calls its Flush method at the end.
 // If an error occurs at the Write stage, the number of bytes written and the Write error is returned.
 // If an error occurs at the Flush stage, the number of bytes written in the Write stage and the error that happened when flushing is returned.
