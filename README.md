@@ -1,4 +1,4 @@
-# Note
+# NOTE
 Currently refactoring this whole project. Checkout branch `v0.1` if you want a working version for now.
 
 # RTMP Server
@@ -24,7 +24,7 @@ func main() {
 }
 ```
 
-You can also create a client to listen for events on a stream (eg: audio, video, and metadata events) so you can do further processing on the media that is being streamed:
+You can also create a playback client to listen for events on a stream (eg: audio, video, and metadata events) so you can do further processing on the media that is being streamed:
 ```
 package main
 

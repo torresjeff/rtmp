@@ -6,23 +6,36 @@ import (
 )
 
 type Writer struct {
-	io.Writer
+	WriterFlusher
 
 	writer *bufio.Writer
 }
 
-func NewWriter(writer *bufio.Writer) *Writer {
-	return &Writer{writer: writer}
+type WriterFlusher interface {
+	io.Writer
+	Flusher
 }
 
-// Write writes to the underlying bufio.Writer and calls its Flush method at the end.
-// If an error occurs at the Write stage, the number of bytes written and the Write error is returned.
-// If an error occurs at the Flush stage, the number of bytes written in the Write stage and the error that happened when flushing is returned.
-func (w *Writer) Write(p []byte) (n int, err error) {
-	n, err = w.writer.Write(p)
-	if err != nil {
-		return n, err
+type Flusher interface {
+	Flush() error
+}
+
+func NewWriter(writer *bufio.Writer) (*Writer, error) {
+	if writer == nil {
+		return nil, ErrNilWriter
 	}
-	err = w.writer.Flush()
-	return n, err
+	return &Writer{writer: writer}, nil
+}
+
+// Write writes the contents of p into the underlying bufio.Writer.
+// It returns the number of bytes written.
+// If n < len(p), it also returns an error explaining
+// why the write is short.
+func (w *Writer) Write(p []byte) (n int, err error) {
+	return w.writer.Write(p)
+}
+
+// Flush writes any buffered data in the underlying bufio.Writer.
+func (w *Writer) Flush() error {
+	return w.writer.Flush()
 }

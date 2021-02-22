@@ -6,14 +6,32 @@ import (
 )
 
 type Reader struct {
-	io.Reader
+	ReadByteReaderCounter
 
 	reader *bufio.Reader
 	n      uint64
 }
 
-func NewReader(reader *bufio.Reader) *Reader {
-	return &Reader{reader: reader}
+type ByteCounter interface {
+	ReadBytes() int
+}
+
+type ByteReader interface {
+	ReadByte() (byte, error)
+}
+
+// ReadByteReaderCounter is the interface that groups Reader, ByteReader, and ByteCounter interfaces.
+type ReadByteReaderCounter interface {
+	io.Reader
+	ByteCounter
+	ByteReader
+}
+
+func NewReader(reader *bufio.Reader) (*Reader, error) {
+	if reader == nil {
+		return nil, ErrNilReader
+	}
+	return &Reader{reader: reader}, nil
 }
 
 // Read reads exactly len(p) bytes from the underlying bufio.Reader into p.
@@ -39,6 +57,7 @@ func (r *Reader) ReadByte() (byte, error) {
 	return b, err
 }
 
-func (r *Reader) getNumberOfReadBytes() uint64 {
+// Returns the number of bytes read so far from the underlying bufio.Reader since the instantiation of the Reader.
+func (r *Reader) ReadBytes() uint64 {
 	return r.n
 }
