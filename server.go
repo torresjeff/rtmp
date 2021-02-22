@@ -1,12 +1,10 @@
 package rtmp
 
 import (
-	"bufio"
 	"fmt"
 	"github.com/pkg/errors"
 	"github.com/torresjeff/rtmp/config"
 	"go.uber.org/zap"
-	"io"
 	"net"
 )
 
@@ -14,8 +12,7 @@ import (
 type Server struct {
 	Addr string
 	// TODO: create Logger interface to not depend on zap directly
-	Logger      *zap.Logger
-	Broadcaster *Broadcaster
+	Logger *zap.Logger
 	// TODO: should probably add something like maxConns
 }
 
@@ -51,22 +48,7 @@ func (s *Server) Listen() error {
 		go func(conn net.Conn) {
 			defer conn.Close()
 
-			socketr := NewReader(bufio.NewReaderSize(conn, config.BuffioSize))
-			socketw := bufio.NewWriterSize(conn, config.BuffioSize)
-			sess := NewSession(s.Logger, s.Broadcaster)
-
-			sess.messageManager = NewMessageManager(sess,
-				NewHandshaker(socketr, socketw),
-				NewChunkHandler(socketr, socketw),
-			)
-
-			s.Logger.Info(fmt.Sprint("[server] Starting server session with sessionId ", sess.sessionID))
-			err := sess.Start()
-			if err != io.EOF {
-				s.Logger.Error(fmt.Sprint("[server] Server session with sessionId ", sess.sessionID, " ended with an error: ", err))
-			} else {
-				s.Logger.Info(fmt.Sprint("[server] Server session with sessionId ", sess.sessionID, " ended."))
-			}
+			// TODO: Instantiate all necessary stuff: chunk stream, message stream, readers, writers, etc.
 		}(conn)
 
 	}

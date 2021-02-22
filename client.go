@@ -1,11 +1,11 @@
 package rtmp
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
+	"github.com/torresjeff/rtmp/audio"
 	"github.com/torresjeff/rtmp/config"
-	"io"
+	"github.com/torresjeff/rtmp/video"
 	"net"
 	"net/url"
 	"strings"
@@ -19,9 +19,9 @@ type Client struct {
 	app        string
 	streamKey  string
 	url        *url.URL
-	OnAudio    AudioCallback
-	OnVideo    VideoCallback
-	OnMetadata MetadataCallback
+	OnAudio    func(format audio.Format, sampleRate audio.SampleRate, sampleSize audio.SampleSize, channels audio.Channel, payload []byte, timestamp uint32)
+	OnVideo    func(frameType video.FrameType, codec video.Codec, payload []byte, timestamp uint32)
+	OnMetadata func(metadata map[string]interface{})
 }
 
 func (c *Client) Connect(addr string) error {
@@ -67,14 +67,7 @@ func (c *Client) Connect(addr string) error {
 		fmt.Println("client: connected to", conn.RemoteAddr().String())
 	}
 
-	socketr := bufio.NewReaderSize(conn, config.BuffioSize)
-	socketw := bufio.NewWriterSize(conn, config.BuffioSize)
-	tcUrl := "rtmp://" + conn.RemoteAddr().String() + "/" + c.app
-	client := NewClientSession(c.app, tcUrl, c.streamKey, c.OnAudio, c.OnVideo, c.OnMetadata)
-	err = client.StartPlayback()
-	if err != nil && err != io.EOF {
-		return err
-	}
+	// TODO: Wire up callbacks, create session, etc.
 
 	return nil
 }
