@@ -6,12 +6,12 @@ import (
 )
 
 type Writer struct {
-	WriterFlusher
+	WriteFlusher
 
 	writer *bufio.Writer
 }
 
-type WriterFlusher interface {
+type WriteFlusher interface {
 	io.Writer
 	Flusher
 }

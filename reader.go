@@ -13,7 +13,7 @@ type Reader struct {
 }
 
 type ByteCounter interface {
-	ReadBytes() int
+	ReadBytes() uint64
 }
 
 type ByteReader interface {
