@@ -41,7 +41,7 @@ func NewMessageStream(reader ReadByteReaderCounter, writer WriteFlusher, handsha
 	}
 }
 
-// Initialize performs the handshake and changes the state of the MessageStream to handshakeCompleted
+// Initialize performs the handshake and changes the internal state of the MessageStream to handshakeCompleted
 func (ms *MessageStream) Initialize() error {
 	err := ms.handshaker.Handshake(ms.reader, ms.writer)
 	if err != nil {
