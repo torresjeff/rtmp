@@ -34,7 +34,7 @@ const (
 )
 
 var ErrNextMessageWithoutHandshake = errors.New("NextMessage() was called before completing handshake")
-var ErrChunkType1WithoutPreviousChunkType0 = errors.New("received chunk type 1 without previous chunk type 0 in the same chunk stream ID")
+var ErrNoPreviousChunkExists = errors.New("received chunk type that depends on a previous chunk, but no previous chunk was found")
 
 type MessageState struct {
 	message         *Message
@@ -147,7 +147,7 @@ func (ms *MessageStream) parseChunkHeader(chunkType ChunkType, chunkStreamID uin
 	var timestamp uint32
 	var timestampDelta uint32
 	var messageLength uint32
-	var messageTypeID MessageType
+	var messageType MessageType
 	var messageStreamID uint32
 	hasExtendedTimestamp := false
 	switch chunkType {
@@ -163,7 +163,7 @@ func (ms *MessageStream) parseChunkHeader(chunkType ChunkType, chunkStreamID uin
 			hasExtendedTimestamp = true
 		}
 		messageLength = binary24.BigEndian.Uint24(messageHeader[messageLengthIndexStart : messageLengthIndexStart+messageLengthLength])
-		messageTypeID = MessageType(messageHeader[messageTypeIDStart])
+		messageType = MessageType(messageHeader[messageTypeIDStart])
 		messageStreamID = binary.LittleEndian.Uint32(messageHeader[messageStreamIDStart : messageStreamIDStart+messageStreamIDLength])
 
 		if hasExtendedTimestamp {
@@ -173,7 +173,7 @@ func (ms *MessageStream) parseChunkHeader(chunkType ChunkType, chunkStreamID uin
 	case ChunkType1:
 		previousMessage, exists := ms.messageCache[chunkStreamID]
 		if !exists {
-			return nil, ErrChunkType1WithoutPreviousChunkType0
+			return nil, ErrNoPreviousChunkExists
 		}
 		messageHeader := make([]byte, chunkType1MessageHeaderLength)
 		_, err := ms.reader.Read(messageHeader)
@@ -188,8 +188,8 @@ func (ms *MessageStream) parseChunkHeader(chunkType ChunkType, chunkStreamID uin
 			timestamp = previousMessage.lastChunkHeader.timestamp + timestampDelta
 		}
 		messageLength = binary24.BigEndian.Uint24(messageHeader[messageLengthIndexStart : messageLengthIndexStart+messageLengthLength])
-		messageTypeID = MessageType(messageHeader[messageTypeIDStart])
-		messageStreamID = previousMessage.lastChunkHeader.messageStreamId
+		messageType = MessageType(messageHeader[messageTypeIDStart])
+		messageStreamID = previousMessage.lastChunkHeader.messageStreamID
 
 		if hasExtendedTimestamp {
 			extendedTimestampBytes := make([]byte, extendedTimestampLength)
@@ -197,6 +197,31 @@ func (ms *MessageStream) parseChunkHeader(chunkType ChunkType, chunkStreamID uin
 			timestamp = previousMessage.lastChunkHeader.timestamp + timestampDelta
 		}
 	case ChunkType2:
+		previousMessage, exists := ms.messageCache[chunkStreamID]
+		if !exists {
+			return nil, ErrNoPreviousChunkExists
+		}
+		messageHeader := make([]byte, chunkType2MessageHeaderLength)
+		_, err := ms.reader.Read(messageHeader)
+		if err != nil {
+			return nil, err
+		}
+
+		timestampDelta = binary24.BigEndian.Uint24(messageHeader[timestampIndexStart:timestampLength])
+		if timestampDelta == 0xFFFFFF {
+			hasExtendedTimestamp = true
+		} else {
+			timestamp = previousMessage.lastChunkHeader.timestamp + timestampDelta
+		}
+		messageLength = previousMessage.lastChunkHeader.messageLength
+		messageType = previousMessage.lastChunkHeader.messageType
+		messageStreamID = previousMessage.lastChunkHeader.messageStreamID
+
+		if hasExtendedTimestamp {
+			extendedTimestampBytes := make([]byte, extendedTimestampLength)
+			timestampDelta = binary.BigEndian.Uint32(extendedTimestampBytes)
+			timestamp = previousMessage.lastChunkHeader.timestamp + timestampDelta
+		}
 	case ChunkType3:
 	}
 
@@ -206,7 +231,7 @@ func (ms *MessageStream) parseChunkHeader(chunkType ChunkType, chunkStreamID uin
 		timestamp:       timestamp,
 		timestampDelta:  timestampDelta,
 		messageLength:   messageLength,
-		messageType:     messageTypeID,
-		messageStreamId: messageStreamID,
+		messageType:     messageType,
+		messageStreamID: messageStreamID,
 	}, nil
 }

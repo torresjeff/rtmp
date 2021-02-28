@@ -33,5 +33,5 @@ type ChunkHeader struct {
 	timestampDelta  uint32
 	messageLength   uint32
 	messageType     MessageType
-	messageStreamId uint32
+	messageStreamID uint32
 }
