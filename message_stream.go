@@ -17,7 +17,24 @@ const (
 	handshakeCompleted
 )
 
+const (
+	// Timestamp is in indices [0, 3) (half-open range)
+	timestampIndexStart = 0
+	timestampLength     = 3
+
+	messageLengthIndexStart = 3
+	messageLengthLength     = 3
+
+	messageTypeIDStart = 6
+
+	messageStreamIDStart  = 7
+	messageStreamIDLength = 4
+
+	extendedTimestampLength = 4
+)
+
 var ErrNextMessageWithoutHandshake = errors.New("NextMessage() was called before completing handshake")
+var ErrChunkType1WithoutPreviousChunkType0 = errors.New("received chunk type 1 without previous chunk type 0 in the same chunk stream ID")
 
 type MessageState struct {
 	message         *Message
@@ -92,6 +109,7 @@ func (ms *MessageStream) NextMessage() (*Message, error) {
 			return nil, err
 		}
 	} else {
+		ms.logger.Info("received non protocol control message")
 	}
 
 	return nil, nil
@@ -125,29 +143,13 @@ func (ms *MessageStream) handleProtocolMessage(chunkType ChunkType) error {
 	return nil
 }
 
-const (
-	// Timestamp is in indices [0, 3) (half-open range)
-	timestampIndexStart = 0
-	timestampLength     = 3
-
-	messageLengthIndexStart = 3
-	messageLengthLength     = 3
-
-	messageTypeIDStart = 6
-
-	messageStreamIDStart  = 7
-	messageStreamIDLength = 4
-
-	extendedTimestampLength = 4
-)
-
 func (ms *MessageStream) parseChunkHeader(chunkType ChunkType, chunkStreamID uint32) (*ChunkHeader, error) {
-	var hasExtendedTimestamp bool
 	var timestamp uint32
+	var timestampDelta uint32
 	var messageLength uint32
 	var messageTypeID MessageType
 	var messageStreamID uint32
-	var extendedTimestamp uint32
+	hasExtendedTimestamp := false
 	switch chunkType {
 	case ChunkType0:
 		messageHeader := make([]byte, chunkType0MessageHeaderLength)
@@ -163,24 +165,48 @@ func (ms *MessageStream) parseChunkHeader(chunkType ChunkType, chunkStreamID uin
 		messageLength = binary24.BigEndian.Uint24(messageHeader[messageLengthIndexStart : messageLengthIndexStart+messageLengthLength])
 		messageTypeID = MessageType(messageHeader[messageTypeIDStart])
 		messageStreamID = binary.LittleEndian.Uint32(messageHeader[messageStreamIDStart : messageStreamIDStart+messageStreamIDLength])
+
+		if hasExtendedTimestamp {
+			extendedTimestampBytes := make([]byte, extendedTimestampLength)
+			timestamp = binary.BigEndian.Uint32(extendedTimestampBytes)
+		}
 	case ChunkType1:
+		previousMessage, exists := ms.messageCache[chunkStreamID]
+		if !exists {
+			return nil, ErrChunkType1WithoutPreviousChunkType0
+		}
+		messageHeader := make([]byte, chunkType1MessageHeaderLength)
+		_, err := ms.reader.Read(messageHeader)
+		if err != nil {
+			return nil, err
+		}
+
+		timestampDelta = binary24.BigEndian.Uint24(messageHeader[timestampIndexStart:timestampLength])
+		if timestampDelta == 0xFFFFFF {
+			hasExtendedTimestamp = true
+		} else {
+			timestamp = previousMessage.lastChunkHeader.timestamp + timestampDelta
+		}
+		messageLength = binary24.BigEndian.Uint24(messageHeader[messageLengthIndexStart : messageLengthIndexStart+messageLengthLength])
+		messageTypeID = MessageType(messageHeader[messageTypeIDStart])
+		messageStreamID = previousMessage.lastChunkHeader.messageStreamId
+
+		if hasExtendedTimestamp {
+			extendedTimestampBytes := make([]byte, extendedTimestampLength)
+			timestampDelta = binary.BigEndian.Uint32(extendedTimestampBytes)
+			timestamp = previousMessage.lastChunkHeader.timestamp + timestampDelta
+		}
 	case ChunkType2:
 	case ChunkType3:
 	}
 
-	extendedTimestampBytes := make([]byte, extendedTimestampLength)
-	if hasExtendedTimestamp {
-		extendedTimestamp = binary.BigEndian.Uint32(extendedTimestampBytes)
-	}
-
 	return &ChunkHeader{
-		chunkType:            chunkType,
-		chunkStreamID:        chunkStreamID,
-		messageTimestamp:     timestamp,
-		messageLength:        messageLength,
-		messageType:          messageTypeID,
-		messageStreamId:      messageStreamID,
-		hasExtendedTimestamp: hasExtendedTimestamp,
-		extendedTimestamp:    extendedTimestamp,
+		chunkType:       chunkType,
+		chunkStreamID:   chunkStreamID,
+		timestamp:       timestamp,
+		timestampDelta:  timestampDelta,
+		messageLength:   messageLength,
+		messageType:     messageTypeID,
+		messageStreamId: messageStreamID,
 	}, nil
 }

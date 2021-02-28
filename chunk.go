@@ -23,12 +23,15 @@ type Chunk struct {
 // ChunkHeader contains the information used in order to interpret a chunk correctly.
 // It includes the chunk type (chunkType), message length, message timestamp, among other data.
 type ChunkHeader struct {
-	chunkType            ChunkType
-	chunkStreamID        uint32
-	messageTimestamp     uint32
-	messageLength        uint32
-	messageType          MessageType
-	messageStreamId      uint32
-	hasExtendedTimestamp bool
-	extendedTimestamp    uint32
+	chunkType     ChunkType
+	chunkStreamID uint32
+	// timestamp can contain both the 24-bit version (normal timestamp), or the 32-bit version (extended timestamp)
+	// chunk header encoders/decoders should handle this.
+	timestamp uint32
+	// timestampDelta can contain both the 24-bit version (normal timestamp), or the 32-bit version (extended timestamp)
+	// chunk header encoders/decoders should handle this.
+	timestampDelta  uint32
+	messageLength   uint32
+	messageType     MessageType
+	messageStreamId uint32
 }
