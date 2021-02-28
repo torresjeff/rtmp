@@ -3,12 +3,14 @@ package rtmp
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
+	"github.com/torresjeff/rtmp/internal/binary24"
+	"go.uber.org/zap"
 )
 
 type Stage uint8
 
 const DefaultChunkSize = 128
+const protocolStreamID = 2
 
 const (
 	waitingForHandshake Stage = iota
@@ -24,6 +26,7 @@ type MessageState struct {
 }
 
 type MessageStream struct {
+	logger         *zap.SugaredLogger
 	handshaker     Handshaker
 	reader         ReadByteReaderCounter
 	writer         WriteFlusher
@@ -37,8 +40,9 @@ type MessageStream struct {
 	stage Stage
 }
 
-func NewMessageStream(reader ReadByteReaderCounter, writer WriteFlusher, handshaker Handshaker) *MessageStream {
+func NewMessageStream(logger *zap.SugaredLogger, reader ReadByteReaderCounter, writer WriteFlusher, handshaker Handshaker) *MessageStream {
 	return &MessageStream{
+		logger:         logger,
 		handshaker:     handshaker,
 		reader:         reader,
 		writer:         writer,
@@ -63,6 +67,7 @@ func (ms *MessageStream) NextMessage() (*Message, error) {
 	if ms.stage == waitingForHandshake {
 		return nil, ErrNextMessageWithoutHandshake
 	}
+
 	basicHeader, err := ms.reader.ReadByte()
 	if err != nil {
 		return nil, err
@@ -73,14 +78,22 @@ func (ms *MessageStream) NextMessage() (*Message, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("chunkType: ", chunkType, ", chunkStreamID: ", chunkStreamID)
 
-	switch chunkType {
-	case ChunkType0:
-	case ChunkType1:
-	case ChunkType2:
-
+	chunkHeader, err := ms.parseChunkHeader(chunkType, chunkStreamID)
+	if err != nil {
+		return nil, err
 	}
+
+	ms.logger.Debugf("received new chunk header, %+v", chunkHeader)
+
+	if chunkStreamID == protocolStreamID {
+		err = ms.handleProtocolMessage(chunkType)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+	}
+
 	return nil, nil
 }
 
@@ -105,4 +118,69 @@ func (ms *MessageStream) getChunkStreamID(basicHeader uint8) (uint32, error) {
 		chunkStreamID = uint32(binary.BigEndian.Uint16(csIDBytes)) + 64
 	}
 	return chunkStreamID, nil
+}
+
+func (ms *MessageStream) handleProtocolMessage(chunkType ChunkType) error {
+
+	return nil
+}
+
+const (
+	// Timestamp is in indices [0, 3) (half-open range)
+	timestampIndexStart = 0
+	timestampLength     = 3
+
+	messageLengthIndexStart = 3
+	messageLengthLength     = 3
+
+	messageTypeIDStart = 6
+
+	messageStreamIDStart  = 7
+	messageStreamIDLength = 4
+
+	extendedTimestampLength = 4
+)
+
+func (ms *MessageStream) parseChunkHeader(chunkType ChunkType, chunkStreamID uint32) (*ChunkHeader, error) {
+	var hasExtendedTimestamp bool
+	var timestamp uint32
+	var messageLength uint32
+	var messageTypeID MessageType
+	var messageStreamID uint32
+	var extendedTimestamp uint32
+	switch chunkType {
+	case ChunkType0:
+		messageHeader := make([]byte, chunkType0MessageHeaderLength)
+		_, err := ms.reader.Read(messageHeader)
+		if err != nil {
+			return nil, err
+		}
+
+		timestamp = binary24.BigEndian.Uint24(messageHeader[timestampIndexStart:timestampLength])
+		if timestamp == 0xFFFFFF {
+			hasExtendedTimestamp = true
+		}
+		messageLength = binary24.BigEndian.Uint24(messageHeader[messageLengthIndexStart : messageLengthIndexStart+messageLengthLength])
+		messageTypeID = MessageType(messageHeader[messageTypeIDStart])
+		messageStreamID = binary.LittleEndian.Uint32(messageHeader[messageStreamIDStart : messageStreamIDStart+messageStreamIDLength])
+	case ChunkType1:
+	case ChunkType2:
+	case ChunkType3:
+	}
+
+	extendedTimestampBytes := make([]byte, extendedTimestampLength)
+	if hasExtendedTimestamp {
+		extendedTimestamp = binary.BigEndian.Uint32(extendedTimestampBytes)
+	}
+
+	return &ChunkHeader{
+		chunkType:            chunkType,
+		chunkStreamID:        chunkStreamID,
+		messageTimestamp:     timestamp,
+		messageLength:        messageLength,
+		messageType:          messageTypeID,
+		messageStreamId:      messageStreamID,
+		hasExtendedTimestamp: hasExtendedTimestamp,
+		extendedTimestamp:    extendedTimestamp,
+	}, nil
 }
