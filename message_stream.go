@@ -223,6 +223,26 @@ func (ms *MessageStream) parseChunkHeader(chunkType ChunkType, chunkStreamID uin
 			timestamp = previousMessage.lastChunkHeader.timestamp + timestampDelta
 		}
 	case ChunkType3:
+		previousMessage, exists := ms.messageCache[chunkStreamID]
+		if !exists {
+			return nil, ErrNoPreviousChunkExists
+		}
+
+		timestampDelta = previousMessage.lastChunkHeader.timestampDelta
+		if timestampDelta == 0xFFFFFF {
+			hasExtendedTimestamp = true
+		} else {
+			timestamp = previousMessage.lastChunkHeader.timestamp + timestampDelta
+		}
+		messageLength = previousMessage.lastChunkHeader.messageLength
+		messageType = previousMessage.lastChunkHeader.messageType
+		messageStreamID = previousMessage.lastChunkHeader.messageStreamID
+
+		if hasExtendedTimestamp {
+			extendedTimestampBytes := make([]byte, extendedTimestampLength)
+			timestampDelta = binary.BigEndian.Uint32(extendedTimestampBytes)
+			timestamp = previousMessage.lastChunkHeader.timestamp + timestampDelta
+		}
 	}
 
 	return &ChunkHeader{
