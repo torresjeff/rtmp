@@ -11,6 +11,7 @@ type Stage uint8
 
 const DefaultChunkSize = 128
 const protocolStreamID = 2
+const max24BitTimestamp = 0xFFFFFF
 
 const (
 	waitingForHandshake Stage = iota
@@ -38,7 +39,7 @@ var ErrNoPreviousChunkExists = errors.New("received chunk type that depends on a
 
 type MessageState struct {
 	message         *Message
-	bytesRead       uint32
+	bytesLeft       uint32
 	lastChunkHeader *ChunkHeader
 }
 
@@ -159,7 +160,7 @@ func (ms *MessageStream) parseChunkHeader(chunkType ChunkType, chunkStreamID uin
 		}
 
 		timestamp = binary24.BigEndian.Uint24(messageHeader[timestampIndexStart:timestampLength])
-		if timestamp == 0xFFFFFF {
+		if timestamp == max24BitTimestamp {
 			hasExtendedTimestamp = true
 		}
 		messageLength = binary24.BigEndian.Uint24(messageHeader[messageLengthIndexStart : messageLengthIndexStart+messageLengthLength])
@@ -182,7 +183,7 @@ func (ms *MessageStream) parseChunkHeader(chunkType ChunkType, chunkStreamID uin
 		}
 
 		timestampDelta = binary24.BigEndian.Uint24(messageHeader[timestampIndexStart:timestampLength])
-		if timestampDelta == 0xFFFFFF {
+		if timestampDelta == max24BitTimestamp {
 			hasExtendedTimestamp = true
 		} else {
 			timestamp = previousMessage.lastChunkHeader.timestamp + timestampDelta
@@ -208,7 +209,7 @@ func (ms *MessageStream) parseChunkHeader(chunkType ChunkType, chunkStreamID uin
 		}
 
 		timestampDelta = binary24.BigEndian.Uint24(messageHeader[timestampIndexStart:timestampLength])
-		if timestampDelta == 0xFFFFFF {
+		if timestampDelta == max24BitTimestamp {
 			hasExtendedTimestamp = true
 		} else {
 			timestamp = previousMessage.lastChunkHeader.timestamp + timestampDelta
@@ -228,12 +229,27 @@ func (ms *MessageStream) parseChunkHeader(chunkType ChunkType, chunkStreamID uin
 			return nil, ErrNoPreviousChunkExists
 		}
 
-		timestampDelta = previousMessage.lastChunkHeader.timestampDelta
-		if timestampDelta == 0xFFFFFF {
-			hasExtendedTimestamp = true
+		newMessage := false
+		// Chunk type 3 can be used in two different ways:
+		// 1) to specify the continuation of a message.
+		// 2) to specify the beginning of a new message whose header can be derived from the existing state data.
+		if previousMessage.bytesLeft > 0 {
+			// This chunk type 3 is the continuation of a message, so preserve the same timestamp delta as the previous chunk
+			timestampDelta = previousMessage.lastChunkHeader.timestamp
 		} else {
-			timestamp = previousMessage.lastChunkHeader.timestamp + timestampDelta
+			newMessage = true
+			// if a chunk type 3 follows a chunk type 0 (and is a new message), then the delta is the absolute timestamp of the type 0 chunk
+			if previousMessage.lastChunkHeader.chunkType == ChunkType0 {
+				timestampDelta = previousMessage.lastChunkHeader.timestamp
+			} else {
+				timestampDelta = previousMessage.lastChunkHeader.timestampDelta
+			}
 		}
+
+		if timestampDelta >= max24BitTimestamp {
+			hasExtendedTimestamp = true
+		}
+
 		messageLength = previousMessage.lastChunkHeader.messageLength
 		messageType = previousMessage.lastChunkHeader.messageType
 		messageStreamID = previousMessage.lastChunkHeader.messageStreamID
@@ -241,11 +257,16 @@ func (ms *MessageStream) parseChunkHeader(chunkType ChunkType, chunkStreamID uin
 		if hasExtendedTimestamp {
 			extendedTimestampBytes := make([]byte, extendedTimestampLength)
 			timestampDelta = binary.BigEndian.Uint32(extendedTimestampBytes)
+		}
+
+		if newMessage {
 			timestamp = previousMessage.lastChunkHeader.timestamp + timestampDelta
+		} else {
+			timestamp = previousMessage.lastChunkHeader.timestamp
 		}
 	}
 
-	return &ChunkHeader{
+	chunkHeader := &ChunkHeader{
 		chunkType:       chunkType,
 		chunkStreamID:   chunkStreamID,
 		timestamp:       timestamp,
@@ -253,5 +274,7 @@ func (ms *MessageStream) parseChunkHeader(chunkType ChunkType, chunkStreamID uin
 		messageLength:   messageLength,
 		messageType:     messageType,
 		messageStreamID: messageStreamID,
-	}, nil
+	}
+
+	return chunkHeader, nil
 }
