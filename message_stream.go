@@ -26,10 +26,10 @@ const (
 	messageLengthIndexStart = 3
 	messageLengthLength     = 3
 
-	messageTypeIDStart = 6
+	messageTypeIDIndexStart = 6
 
-	messageStreamIDStart  = 7
-	messageStreamIDLength = 4
+	messageStreamIDIndexStart = 7
+	messageStreamIDLength     = 4
 
 	extendedTimestampLength = 4
 )
@@ -164,8 +164,8 @@ func (ms *MessageStream) parseChunkHeader(chunkType ChunkType, chunkStreamID uin
 			hasExtendedTimestamp = true
 		}
 		messageLength = binary24.BigEndian.Uint24(messageHeader[messageLengthIndexStart : messageLengthIndexStart+messageLengthLength])
-		messageType = MessageType(messageHeader[messageTypeIDStart])
-		messageStreamID = binary.LittleEndian.Uint32(messageHeader[messageStreamIDStart : messageStreamIDStart+messageStreamIDLength])
+		messageType = MessageType(messageHeader[messageTypeIDIndexStart])
+		messageStreamID = binary.LittleEndian.Uint32(messageHeader[messageStreamIDIndexStart : messageStreamIDIndexStart+messageStreamIDLength])
 
 		if hasExtendedTimestamp {
 			extendedTimestampBytes := make([]byte, extendedTimestampLength)
@@ -189,7 +189,7 @@ func (ms *MessageStream) parseChunkHeader(chunkType ChunkType, chunkStreamID uin
 			timestamp = previousMessage.lastChunkHeader.timestamp + timestampDelta
 		}
 		messageLength = binary24.BigEndian.Uint24(messageHeader[messageLengthIndexStart : messageLengthIndexStart+messageLengthLength])
-		messageType = MessageType(messageHeader[messageTypeIDStart])
+		messageType = MessageType(messageHeader[messageTypeIDIndexStart])
 		messageStreamID = previousMessage.lastChunkHeader.messageStreamID
 
 		if hasExtendedTimestamp {
